@@ -84,3 +84,33 @@ type AntiBotEventModel struct {
 }
 
 func (AntiBotEventModel) TableName() string { return "antibot_events" }
+
+// WorkerModel is the GORM model for the workers table.
+type WorkerModel struct {
+	ID            string    `gorm:"primaryKey;column:id"`
+	Hostname      string    `gorm:"column:hostname;not null"`
+	Status        string    `gorm:"column:status;not null;default:online"`
+	PoolSize      int       `gorm:"column:pool_size;not null;default:10"`
+	LastHeartbeat time.Time `gorm:"column:last_heartbeat;not null"`
+	StartedAt     time.Time `gorm:"column:started_at;not null"`
+	CreatedAt     time.Time `gorm:"column:created_at;not null"`
+	UpdatedAt     time.Time `gorm:"column:updated_at;not null"`
+}
+
+func (WorkerModel) TableName() string { return "workers" }
+
+// DomainAssignmentModel is the GORM model for the domain_assignments table.
+type DomainAssignmentModel struct {
+	ID          string     `gorm:"primaryKey;column:id"`
+	WorkerID    string     `gorm:"column:worker_id;not null"`
+	JobID       string     `gorm:"column:job_id;not null"`
+	Domain      string     `gorm:"column:domain;not null"`
+	Concurrency int        `gorm:"column:concurrency;not null;default:2"`
+	ActiveCount int        `gorm:"column:active_count;not null;default:0"`
+	AssignedAt  time.Time  `gorm:"column:assigned_at;not null"`
+	ReleasedAt  *time.Time `gorm:"column:released_at"`
+	CreatedAt   time.Time  `gorm:"column:created_at;not null"`
+	UpdatedAt   time.Time  `gorm:"column:updated_at;not null"`
+}
+
+func (DomainAssignmentModel) TableName() string { return "domain_assignments" }

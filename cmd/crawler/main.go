@@ -2,18 +2,24 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
 	"github.com/atvirokodosprendimai/crawlerdb/internal/adapters/antibot"
 	"github.com/atvirokodosprendimai/crawlerdb/internal/adapters/config"
+	store "github.com/atvirokodosprendimai/crawlerdb/internal/adapters/db/gorm"
 	fetcher "github.com/atvirokodosprendimai/crawlerdb/internal/adapters/http"
+	"github.com/atvirokodosprendimai/crawlerdb/internal/adapters/http/extraction"
 	broker "github.com/atvirokodosprendimai/crawlerdb/internal/adapters/nats"
 	"github.com/atvirokodosprendimai/crawlerdb/internal/adapters/robots"
+	"github.com/atvirokodosprendimai/crawlerdb/internal/adapters/worker"
 	"github.com/atvirokodosprendimai/crawlerdb/internal/app/services"
+	"github.com/atvirokodosprendimai/crawlerdb/internal/domain/entities"
 	"github.com/nats-io/nats.go"
 )
 
@@ -28,11 +34,35 @@ func main() {
 		}
 	}
 
+	// Load or create persistent worker identity.
+	identity, err := worker.LoadOrCreate(cfg.Crawler.DataDir)
+	if err != nil {
+		logger.Error("load worker identity", "err", err)
+		os.Exit(1)
+	}
+	logger.Info("worker identity", "id", identity.ID(), "path", identity.Path())
+
+	hostname, _ := os.Hostname()
+
+	// Open database (shared SQLite for worker registry).
+	db, err := store.Open(cfg.Database.Path)
+	if err != nil {
+		logger.Error("open database", "err", err)
+		os.Exit(1)
+	}
+	if err := store.Migrate(db); err != nil {
+		logger.Error("migrate database", "err", err)
+		os.Exit(1)
+	}
+
+	workerRepo := store.NewWorkerRepository(db)
+	domainRepo := store.NewDomainAssignmentRepository(db)
+
 	// Connect to NATS.
 	nc, err := nats.Connect(cfg.NATS.URL,
 		nats.MaxReconnects(cfg.NATS.MaxReconnects),
 		nats.ReconnectWait(cfg.NATS.ReconnectWait.Duration),
-		nats.Name("crawlerdb-crawler"),
+		nats.Name("crawlerdb-crawler-"+identity.ID()[:8]),
 	)
 	if err != nil {
 		logger.Error("connect to NATS", "err", err)
@@ -42,6 +72,26 @@ func main() {
 
 	mb := broker.NewFromConn(nc)
 
+	// Register worker.
+	w := entities.RecoverWorker(identity.ID(), hostname, cfg.Crawler.PoolSize)
+	if err := workerRepo.Register(context.Background(), w); err != nil {
+		logger.Error("register worker", "err", err)
+		os.Exit(1)
+	}
+
+	// Check if we have existing domain assignments (resume after restart).
+	existingAssignments, err := domainRepo.FindByWorker(context.Background(), identity.ID())
+	if err != nil {
+		logger.Error("find existing assignments", "err", err)
+		os.Exit(1)
+	}
+	if len(existingAssignments) > 0 {
+		logger.Info("resuming existing assignments",
+			"count", len(existingAssignments),
+			"domains", assignmentDomains(existingAssignments),
+		)
+	}
+
 	// Create fetcher and helpers.
 	httpFetcher := fetcher.New(
 		fetcher.WithUserAgent(cfg.Crawler.UserAgent),
@@ -49,41 +99,143 @@ func main() {
 	)
 	robotsChecker := robots.NewChecker(httpFetcher, cfg.Crawler.UserAgent, cfg.Crawler.RobotsTTL.Duration)
 	rateLimiter := fetcher.NewAdaptiveRateLimiter(cfg.Crawler.DefaultRateLimit.Duration)
-
 	detector := antibot.NewDetector()
-	worker := services.NewWorkerService(httpFetcher, robotsChecker, rateLimiter, detector, mb, cfg.Crawler.PoolSize, logger)
+	ext := extraction.NewExtractor()
+
+	workerSvc := services.NewWorkerService(httpFetcher, robotsChecker, rateLimiter, detector, mb, cfg.Crawler.PoolSize, logger)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	// Subscribe to all crawl dispatch subjects.
-	_, err = nc.QueueSubscribe("crawl.dispatch.>", broker.QueueGroupCrawler, func(msg *nats.Msg) {
-		// Worker service handles task processing internally.
-		_ = msg
-	})
-	if err != nil {
-		logger.Error("subscribe", "err", err)
-		os.Exit(1)
-	}
+	// Subscribe to domain-specific dispatch subjects.
+	sem := make(chan struct{}, cfg.Crawler.PoolSize)
+	var wg sync.WaitGroup
 
-	// Start heartbeat.
+	_, _ = nc.QueueSubscribe("crawl.dispatch.>", broker.QueueGroupCrawler, func(msg *nats.Msg) {
+		var task services.CrawlTask
+		if err := json.Unmarshal(msg.Data, &task); err != nil {
+			logger.Error("unmarshal task", "err", err)
+			return
+		}
+
+		// Check if this domain is assigned to us.
+		taskDomain := extractDomain(task.URL)
+		assigned := false
+		for _, a := range existingAssignments {
+			if a.Domain == taskDomain && a.IsActive() {
+				assigned = true
+				break
+			}
+		}
+
+		// If domain not assigned, try to claim it.
+		if !assigned {
+			existing, _ := domainRepo.FindByDomain(ctx, task.JobID, taskDomain)
+			if existing != nil && existing.WorkerID != identity.ID() {
+				// Another worker has this domain. Skip.
+				return
+			}
+			if existing == nil {
+				// Claim domain.
+				assignment := entities.NewDomainAssignment(
+					identity.ID(), task.JobID, taskDomain, cfg.Crawler.DomainConcurrency,
+				)
+				if err := domainRepo.Assign(ctx, assignment); err != nil {
+					logger.Warn("domain claim failed", "domain", taskDomain, "err", err)
+					return
+				}
+				existingAssignments = append(existingAssignments, assignment)
+				logger.Info("claimed domain", "domain", taskDomain, "job", task.JobID)
+			}
+		}
+
+		sem <- struct{}{}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			defer func() { <-sem }()
+
+			result := workerSvc.ProcessTask(ctx, task)
+
+			resultData, _ := json.Marshal(result)
+			_ = mb.Publish(ctx, broker.CrawlResultSubject(task.JobID), resultData)
+		}()
+	})
+
+	// Heartbeat loop — every 5s.
 	go func() {
-		ticker := time.NewTicker(10 * time.Second)
+		ticker := time.NewTicker(cfg.Crawler.HeartbeatInterval.Duration)
 		defer ticker.Stop()
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				_ = nc.Publish(broker.SubjectWorkerHeartbeat, []byte(`{"status":"alive"}`))
+				now := time.Now().UTC()
+				_ = workerRepo.UpdateHeartbeat(ctx, identity.ID(), now)
+
+				// Publish heartbeat to NATS for core monitoring.
+				hb := map[string]any{
+					"worker_id": identity.ID(),
+					"hostname":  hostname,
+					"status":    "alive",
+					"domains":   assignmentDomains(existingAssignments),
+					"timestamp": now,
+				}
+				data, _ := json.Marshal(hb)
+				_ = nc.Publish(broker.SubjectWorkerHeartbeat, data)
 			}
 		}
 	}()
 
-	logger.Info("crawler started", "pool_size", cfg.Crawler.PoolSize)
+	logger.Info("crawler started",
+		"worker_id", identity.ID(),
+		"pool_size", cfg.Crawler.PoolSize,
+		"heartbeat", cfg.Crawler.HeartbeatInterval.Duration,
+		"ttl", cfg.Crawler.HeartbeatTTL.Duration,
+		"domain_concurrency", cfg.Crawler.DomainConcurrency,
+	)
 
-	// Block until signal.
-	_ = worker // Worker ready for use via NATS subscriptions.
+	_ = workerSvc // Worker ready via NATS subscriptions.
+	_ = ext       // Extractor available.
 	<-ctx.Done()
-	logger.Info("crawler shutting down")
+
+	logger.Info("crawler shutting down", "worker_id", identity.ID())
+
+	// Release domain assignments on graceful shutdown.
+	if err := domainRepo.ReleaseByWorker(context.Background(), identity.ID()); err != nil {
+		logger.Error("release domains", "err", err)
+	}
+	_ = workerRepo.MarkOffline(context.Background(), identity.ID())
+
+	wg.Wait()
+	logger.Info("crawler stopped")
+}
+
+func assignmentDomains(assignments []*entities.DomainAssignment) []string {
+	domains := make([]string, 0, len(assignments))
+	for _, a := range assignments {
+		if a.IsActive() {
+			domains = append(domains, a.Domain)
+		}
+	}
+	return domains
+}
+
+func extractDomain(rawURL string) string {
+	// Quick domain extraction — strip scheme, strip path.
+	s := rawURL
+	if i := len("https://"); len(s) > i && (s[:i] == "https://" || s[:7] == "http://") {
+		if s[:5] == "https" {
+			s = s[8:]
+		} else {
+			s = s[7:]
+		}
+	}
+	for i, c := range s {
+		if c == '/' || c == '?' || c == '#' {
+			return s[:i]
+		}
+	}
+	return s
 }

@@ -64,6 +64,8 @@ func main() {
 	jobRepo := store.NewJobRepository(db)
 	urlRepo := store.NewURLRepository(db)
 	pageRepo := store.NewPageRepository(db)
+	workerRepo := store.NewWorkerRepository(db)
+	domainRepo := store.NewDomainAssignmentRepository(db)
 
 	// Create services.
 	jobSvc := services.NewJobService(jobRepo, urlRepo, mb)
@@ -238,7 +240,43 @@ func main() {
 		}
 	}()
 
+	// Stale worker reaper — checks every 5s, releases domains for workers dead >15s.
+	go func() {
+		ttl := cfg.Crawler.HeartbeatTTL.Duration
+		if ttl == 0 {
+			ttl = 15 * time.Second
+		}
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				stale, err := workerRepo.FindStale(ctx, ttl)
+				if err != nil {
+					logger.Error("find stale workers", "err", err)
+					continue
+				}
+				for _, w := range stale {
+					logger.Warn("reaping stale worker",
+						"worker_id", w.ID,
+						"hostname", w.Hostname,
+						"last_heartbeat", w.LastHeartbeat,
+					)
+					// Release all domain assignments.
+					if err := domainRepo.ReleaseByWorker(ctx, w.ID); err != nil {
+						logger.Error("release domains for stale worker", "worker_id", w.ID, "err", err)
+					}
+					// Mark worker offline.
+					if err := workerRepo.MarkOffline(ctx, w.ID); err != nil {
+						logger.Error("mark worker offline", "worker_id", w.ID, "err", err)
+					}
+				}
+			}
+		}
+	}()
+
 	<-ctx.Done()
 	logger.Info("core shutting down")
-	fmt.Fprintln(os.Stdout, "shutdown complete")
 }

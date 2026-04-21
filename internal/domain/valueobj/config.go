@@ -25,13 +25,17 @@ type DatabaseConfig struct {
 
 // CrawlerDefaults holds default crawler settings.
 type CrawlerDefaults struct {
-	UserAgent        string   `toml:"user_agent"`
-	MaxDepth         int      `toml:"max_depth"`
-	PoolSize         int      `toml:"pool_size"`
-	RequestTimeout   Duration `toml:"request_timeout"`
-	DefaultRateLimit Duration `toml:"default_rate_limit"`
-	MaxRetries       int      `toml:"max_retries"`
-	RobotsTTL        Duration `toml:"robots_ttl"`
+	UserAgent          string   `toml:"user_agent"`
+	MaxDepth           int      `toml:"max_depth"`
+	PoolSize           int      `toml:"pool_size"`
+	RequestTimeout     Duration `toml:"request_timeout"`
+	DefaultRateLimit   Duration `toml:"default_rate_limit"`
+	MaxRetries         int      `toml:"max_retries"`
+	RobotsTTL          Duration `toml:"robots_ttl"`
+	HeartbeatInterval  Duration `toml:"heartbeat_interval"`
+	HeartbeatTTL       Duration `toml:"heartbeat_ttl"`
+	DomainConcurrency  int      `toml:"domain_concurrency"`
+	DataDir            string   `toml:"data_dir"`
 }
 
 // ServerConfig holds GUI HTTP server settings.
@@ -52,13 +56,17 @@ func DefaultAppConfig() AppConfig {
 			Path: "crawlerdb.sqlite",
 		},
 		Crawler: CrawlerDefaults{
-			UserAgent:        "CrawlerDB/1.0",
-			MaxDepth:         10,
-			PoolSize:         10,
-			RequestTimeout:   Duration{30 * time.Second},
-			DefaultRateLimit: Duration{time.Second},
-			MaxRetries:       3,
-			RobotsTTL:        Duration{24 * time.Hour},
+			UserAgent:         "CrawlerDB/1.0",
+			MaxDepth:          10,
+			PoolSize:          10,
+			RequestTimeout:    Duration{30 * time.Second},
+			DefaultRateLimit:  Duration{time.Second},
+			MaxRetries:        3,
+			RobotsTTL:         Duration{24 * time.Hour},
+			HeartbeatInterval: Duration{5 * time.Second},
+			HeartbeatTTL:      Duration{15 * time.Second},
+			DomainConcurrency: 2,
+			DataDir:           ".crawlerdb",
 		},
 		Server: ServerConfig{
 			Addr: ":8080",

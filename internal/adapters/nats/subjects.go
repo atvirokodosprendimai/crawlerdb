@@ -43,5 +43,12 @@ func WebhookSubject(event string) string {
 	return fmt.Sprintf("webhook.%s", event)
 }
 
+// Worker lifecycle subjects.
+const (
+	SubjectWorkerRegister = "worker.register"
+	SubjectWorkerClaim    = "worker.domain.claim"
+	SubjectWorkerRelease  = "worker.domain.release"
+)
+
 // QueueGroupCrawler is the queue group name for crawler workers.
 const QueueGroupCrawler = "crawler-workers"
