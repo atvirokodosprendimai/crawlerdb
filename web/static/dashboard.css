@@ -219,6 +219,11 @@ body {
 .stack {
     display: grid;
     gap: 12px;
+    align-content: start;
+}
+
+.compact-panel {
+    align-self: start;
 }
 
 .section {

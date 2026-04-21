@@ -136,7 +136,7 @@ func DashboardRoot(view dashboardView) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "</p></div></div></section><section class=\"workspace\"><aside class=\"stack\"><div class=\"panel section\"><div class=\"section-head\"><div><h2 class=\"section-title\">Start Crawl</h2><p class=\"section-subtitle\">Backend decides what the dashboard looks like after submit.</p></div></div><form data-on:submit=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "</p></div></div></section><section class=\"workspace\"><aside class=\"stack\"><div class=\"panel section compact-panel\"><div class=\"section-head\"><div><h2 class=\"section-title\">Start Crawl</h2><p class=\"section-subtitle\">Backend decides what the dashboard looks like after submit.</p></div></div><form data-on:submit=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
