@@ -1,0 +1,379 @@
+package gui
+
+templ DashboardPage() {
+    <!DOCTYPE html>
+    <html lang="en">
+        <head>
+            <meta charset="UTF-8"/>
+            <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+            <title>CrawlerDB Control Room</title>
+            <link rel="stylesheet" href="/assets/dashboard.css"/>
+            <script type="module" src="https://cdn.jsdelivr.net/gh/starfederation/datastar@v1.0.1/bundles/datastar.js"></script>
+        </head>
+        <body data-signals="{selectedJobId: '', exceptionsOffset: 0, siteOffset: 0, siteQuery: '', siteStatus: 'all', siteContent: 'all', siteDepth: 'all', seedUrl: '', scope: 'same_domain', maxDepth: 3}">
+            <div class="shell">
+                <div class="topbar">
+                    <div class="panel topbar-card">
+                        <div class="topbar-copy">
+                            <span class="eyebrow">Control Room</span>
+                            <strong>Server time</strong>
+                        </div>
+                        <div id="dashboard-clock" class="clock-chip" data-init="@get('/api/gui/clock', {openWhenHidden: true})">
+                            --:--:--
+                        </div>
+                    </div>
+                </div>
+                <div id="dashboard-root" data-init={ refreshDashboardExpr() }>
+                    <div class="panel section">
+                        <div class="empty">Loading dashboard…</div>
+                    </div>
+                </div>
+                <div data-init="@get('/api/gui/events', {openWhenHidden: true})"></div>
+            </div>
+        </body>
+    </html>
+}
+
+templ DashboardRoot(view dashboardView) {
+    <section class="hero">
+        <div class="panel hero-card">
+            <p class="eyebrow">Crawler Operations</p>
+            <h1 class="hero-title">Exceptions first. Everything else second.</h1>
+            <p class="hero-copy">
+                Server-driven dashboard. Every control asks the backend what to render next, and the browser only patches HTML.
+            </p>
+            <div class="hero-meta">
+                <span class="pill">Datastar SSE partials</span>
+                <span class="pill">Errors first for large crawls</span>
+                <span class="pill">Site explorer stays paginated</span>
+            </div>
+        </div>
+        <div class="hero-stats">
+            <div class="panel stat-card alert">
+                <p class="stat-label">Open Incidents</p>
+                <p class="stat-value">{ formatNumber(view.Global.Incidents) }</p>
+                <p class="stat-note">Blocked and failed URLs across all listed jobs.</p>
+            </div>
+            <div class="panel stat-card">
+                <p class="stat-label">Running Jobs</p>
+                <p class="stat-value">{ formatNumber(view.Global.Running) }</p>
+                <p class="stat-note">Active crawls currently consuming worker capacity.</p>
+            </div>
+            <div class="panel stat-card">
+                <p class="stat-label">Queued URLs</p>
+                <p class="stat-value">{ formatNumber(view.Global.Queue) }</p>
+                <p class="stat-note">Pending plus crawling URLs waiting for completion.</p>
+            </div>
+            <div class="panel stat-card">
+                <p class="stat-label">Selected Job</p>
+                <p class="stat-value">{ view.Global.SelectedID }</p>
+                <p class="stat-note">{ view.Global.SelectedNote }</p>
+            </div>
+        </div>
+    </section>
+
+    <section class="workspace">
+        <aside class="stack">
+            <div class="panel section">
+                <div class="section-head">
+                    <div>
+                        <h2 class="section-title">Start Crawl</h2>
+                        <p class="section-subtitle">Backend decides what the dashboard looks like after submit.</p>
+                    </div>
+                </div>
+                <form data-on:submit={ newJobSubmitExpr() }>
+                    <label>
+                        Seed URL
+                        <input type="url" data-bind:seed-url placeholder="https://example.com" required/>
+                    </label>
+                    <div class="field-row">
+                        <label>
+                            Scope
+                            <select data-bind:scope>
+                                <option value="same_domain">Same domain</option>
+                                <option value="include_subdomains">Include subdomains</option>
+                                <option value="follow_externals">Follow externals</option>
+                            </select>
+                        </label>
+                        <label>
+                            Max depth
+                            <input type="number" data-bind:max-depth value="3" min="1" max="20"/>
+                        </label>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Start new crawl</button>
+                </form>
+            </div>
+
+            <div class="panel section">
+                <div class="section-head">
+                    <div>
+                        <h2 class="section-title">Job Triage</h2>
+                        <p class="section-subtitle">Sorted by incidents, then active state.</p>
+                    </div>
+                    <button class="btn btn-secondary" type="button" data-on:click={ refreshDashboardExpr() }>Refresh</button>
+                </div>
+                if len(view.Overview) == 0 {
+                    <div class="empty">No crawl jobs yet. Start with a seed URL.</div>
+                } else {
+                    <div class="job-list">
+                        for _, item := range view.Overview {
+                            <button type="button" class={ "job-item " + activeClass(view.Selected, item.Job.ID) } data-on:click={ selectJobExpr(item.Job.ID) }>
+                                <div class="job-top">
+                                    <div>
+                                        <p class="job-url">{ item.Job.SeedURL }</p>
+                                        <div class="job-id">{ shortID(item.Job.ID) }</div>
+                                    </div>
+                                    <span class={ statusClass(string(item.Job.Status)) }>{ string(item.Job.Status) }</span>
+                                </div>
+                                <div class="metric-inline">
+                                    <div><strong>{ formatNumber(item.ExceptionCount) }</strong><span>Incidents</span></div>
+                                    <div><strong>{ formatNumber(item.Counts["pending"] + item.Counts["crawling"]) }</strong><span>In flight</span></div>
+                                    <div><strong>{ formatNumber(item.Counts["done"]) }</strong><span>Done</span></div>
+                                </div>
+                                <div class="job-bottom">
+                                    <span>{ formatDateTime(item.Job.UpdatedAt) }</span>
+                                    <span>{ formatNumber(item.Counts["blocked"]) } blocked / { formatNumber(item.Counts["error"]) } failed</span>
+                                </div>
+                            </button>
+                        }
+                    </div>
+                }
+            </div>
+        </aside>
+
+        <main class="focus">
+            <div class="panel selected-card">
+                if view.Selected == nil {
+                    <div class="empty">Select a job to inspect its exception queue.</div>
+                } else {
+                    <div class="selected-top">
+                        <div>
+                            <div><span class={ statusClass(string(view.Selected.Job.Status)) }>{ string(view.Selected.Job.Status) }</span></div>
+                            <h2 class="selected-title">{ view.Selected.Job.SeedURL }</h2>
+                            <p class="selected-id">Job { view.Selected.Job.ID }</p>
+                        </div>
+                        <div class="control-row">
+                            for _, control := range view.Selected.Controls {
+                                <button type="button" class={ control.Class } data-on:click={ control.Action }>{ control.Label }</button>
+                            }
+                            <a class="btn btn-secondary" href={ "/api/jobs/" + view.Selected.Job.ID + "/export?format=sitemap" } target="_blank" rel="noreferrer">Sitemap</a>
+                        </div>
+                    </div>
+                    <div class="signal-grid">
+                        for _, card := range view.Selected.SignalCards {
+                            <article class={ "signal-card " + hotClass(card.Hot) }>
+                                <p class="signal-label">{ card.Label }</p>
+                                <p class="signal-value">{ card.Value }</p>
+                                <p class="signal-note">{ card.Note }</p>
+                            </article>
+                        }
+                    </div>
+                }
+            </div>
+
+            <div class="detail-grid">
+                <section class="panel section">
+                    <div class="section-head">
+                        <div>
+                            <h2 class="section-title">Exception Queue</h2>
+                            <p class="section-subtitle">Latest blocked and failed URLs only.</p>
+                        </div>
+                        <div class="section-actions">
+                            <button class="btn btn-secondary" type="button" data-on:click={ exceptionsNewestExpr() }>Newest</button>
+                            if view.Selected != nil {
+                                <a class="btn btn-ghost" href={ "/api/jobs/" + view.Selected.Job.ID + "/export?format=csv" } target="_blank" rel="noreferrer">Export CSV</a>
+                                <a class="btn btn-ghost" href={ "/api/jobs/" + view.Selected.Job.ID + "/export?format=json" } target="_blank" rel="noreferrer">Export JSON</a>
+                            }
+                        </div>
+                    </div>
+                    if len(view.Exceptions.Items) == 0 {
+                        <div class="empty">{ view.Exceptions.EmptyMessage }</div>
+                    } else {
+                        <table class="exceptions-table">
+                            <thead>
+                                <tr>
+                                    <th>Status</th>
+                                    <th>URL</th>
+                                    <th>Reason</th>
+                                    <th>Updated</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                for _, item := range view.Exceptions.Items {
+                                    <tr>
+                                        <td><span class={ statusClass(string(item.Status)) }>{ string(item.Status) }</span></td>
+                                        <td class="url-cell">
+                                            <a class="url-line" href={ item.Normalized } target="_blank" rel="noreferrer">{ item.Normalized }</a>
+                                            <span class="context-line">depth { formatNumber(item.Depth) } · found on { foundOn(item.FoundOn) }</span>
+                                        </td>
+                                        <td><div class="reason">{ exceptionReason(item) }</div></td>
+                                        <td>{ formatDateTime(item.UpdatedAt) }</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                        <div class="pager">
+                            <p class="pager-note">{ view.Exceptions.PageNote }</p>
+                            <div class="section-actions">
+                                <button class="btn btn-secondary" type="button" data-on:click={ view.Exceptions.PrevAction } disabled?={ view.Exceptions.PrevDisabled }>Previous</button>
+                                <button class="btn btn-secondary" type="button" data-on:click={ view.Exceptions.NextAction } disabled?={ view.Exceptions.NextDisabled }>Next</button>
+                            </div>
+                        </div>
+                    }
+                </section>
+
+                <aside class="stack">
+                    <section class="panel section">
+                        <div class="section-head">
+                            <div>
+                                <h2 class="section-title">Status Summary</h2>
+                                <p class="section-subtitle">Counts, not raw rows.</p>
+                            </div>
+                        </div>
+                        if view.Selected == nil {
+                            <div class="empty">No job selected.</div>
+                        } else {
+                            <div class="status-summary">
+                                <div class="mini"><strong>{ formatNumber(view.Selected.Counts["pending"]) }</strong><span>Pending</span></div>
+                                <div class="mini"><strong>{ formatNumber(view.Selected.Counts["crawling"]) }</strong><span>Crawling</span></div>
+                                <div class="mini"><strong>{ formatNumber(view.Selected.Counts["done"]) }</strong><span>Done</span></div>
+                                <div class="mini"><strong>{ formatNumber(view.Selected.Counts["error"] + view.Selected.Counts["blocked"]) }</strong><span>Incidents</span></div>
+                            </div>
+                        }
+                    </section>
+
+                    <section class="panel section">
+                        <div class="section-head">
+                            <div>
+                                <h2 class="section-title">Live Stream</h2>
+                                <p class="section-subtitle">Raw event feed from the backend.</p>
+                            </div>
+                        </div>
+                        <div id="event-stream" class="stream">
+                            <div id="event-stream-empty" class="stream-item">
+                                <p class="quiet-note">Waiting for new events.</p>
+                            </div>
+                        </div>
+                    </section>
+                </aside>
+            </div>
+
+            <section class="panel section">
+                <div class="section-head">
+                    <div>
+                        <h2 class="section-title">Site Explorer</h2>
+                        <p class="section-subtitle">Backend-rendered URL navigation, file links, and crawl depth.</p>
+                    </div>
+                </div>
+                <form class="explorer-toolbar" data-on:submit={ applySiteFiltersExpr() }>
+                    <label class="toolbar-search">
+                        Search URL or title
+                        <input type="search" data-bind:site-query placeholder="Search within selected job"/>
+                    </label>
+                    <label>
+                        Status
+                        <select data-bind:site-status>
+                            <option value="all">All</option>
+                            <option value="pending">Pending</option>
+                            <option value="crawling">Crawling</option>
+                            <option value="done">Done</option>
+                            <option value="blocked">Blocked</option>
+                            <option value="error">Error</option>
+                        </select>
+                    </label>
+                    <label>
+                        Content
+                        <select data-bind:site-content>
+                            <option value="all">All URLs</option>
+                            <option value="stored">Stored files only</option>
+                        </select>
+                    </label>
+                    <label>
+                        Depth
+                        <select data-bind:site-depth>
+                            <option value="all">All depths</option>
+                            for _, depth := range []int{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10} {
+                                <option value={ formatNumber(depth) }>{ formatNumber(depth) }</option>
+                            }
+                        </select>
+                    </label>
+                    <div class="toolbar-actions">
+                        <button class="btn btn-secondary" type="submit">Apply</button>
+                        <button class="btn btn-ghost" type="button" data-on:click={ resetSiteFiltersExpr() }>Reset</button>
+                    </div>
+                </form>
+                if len(view.Site.Items) == 0 {
+                    <div class="empty">{ view.Site.EmptyMessage }</div>
+                } else {
+                    <table class="site-table">
+                        <thead>
+                            <tr>
+                                <th>Status</th>
+                                <th>URL</th>
+                                <th>Page</th>
+                                <th>Depth</th>
+                                <th>Saved</th>
+                                <th>Updated</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            for _, item := range view.Site.Items {
+                                <tr>
+                                    <td><span class={ statusClass(item.Status) }>{ item.Status }</span></td>
+                                    <td class="url-cell">
+                                        <a class="url-line" href={ item.Normalized } target="_blank" rel="noreferrer">{ item.Normalized }</a>
+                                        <span class="context-line">depth { formatNumber(item.Depth) } · found on { foundOn(item.FoundOn) }</span>
+                                    </td>
+                                    <td>
+                                        if item.Title != "" {
+                                            <strong class="page-title">{ item.Title }</strong>
+                                        } else {
+                                            <span class="muted-inline">Not fetched yet</span>
+                                        }
+                                        if item.HTTPStatus > 0 {
+                                            <span class="context-line">HTTP { formatNumber(item.HTTPStatus) }</span>
+                                        }
+                                        if item.ContentType != "" {
+                                            <span class="context-line">{ item.ContentType }</span>
+                                        }
+                                    </td>
+                                    <td>{ formatNumber(item.Depth) }</td>
+                                    <td>
+                                        if item.FileURL != "" {
+                                            <a class="file-link" href={ item.FileURL } target="_blank" rel="noreferrer">Open file</a>
+                                            <span class="context-line">{ formatBytes(item.ContentSize) }</span>
+                                        } else {
+                                            <span class="muted-inline">—</span>
+                                        }
+                                    </td>
+                                    <td>{ lastUpdated(item.UpdatedAt, item.FetchedAt) }</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                    <div class="pager">
+                        <p class="pager-note">{ view.Site.PageNote }</p>
+                        <div class="section-actions">
+                            <button class="btn btn-secondary" type="button" data-on:click={ view.Site.PrevAction } disabled?={ view.Site.PrevDisabled }>Previous</button>
+                            <button class="btn btn-secondary" type="button" data-on:click={ view.Site.NextAction } disabled?={ view.Site.NextDisabled }>Next</button>
+                        </div>
+                    </div>
+                }
+            </section>
+        </main>
+    </section>
+}
+
+templ StreamItem(eventType string, body string, seenAt string) {
+    <article class="stream-item">
+        <div class="stream-meta">
+            <span>{ eventType }</span>
+            <span>{ seenAt }</span>
+        </div>
+        <pre class="stream-body">{ body }</pre>
+    </article>
+}
+
+templ ClockValue(display string) {
+    <span class="clock-value">{ display }</span>
+}

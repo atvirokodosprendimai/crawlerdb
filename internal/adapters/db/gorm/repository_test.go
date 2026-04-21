@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -306,6 +307,7 @@ func TestPageRepository_StoreAndFind(t *testing.T) {
 	assert.Len(t, found.Links, 1)
 	assert.Equal(t, 150*time.Millisecond, found.FetchDuration)
 	assert.NotEmpty(t, found.ContentPath)
+	assert.Contains(t, filepath.ToSlash(found.ContentPath), "/example.com/")
 	assert.Equal(t, int64(len("<html><body>example</body></html>")), found.ContentSize)
 	_, err = os.Stat(filepath.Clean(found.ContentPath))
 	require.NoError(t, err)
@@ -332,4 +334,11 @@ func TestPageRepository_FindByJobID(t *testing.T) {
 	found, err := pages.FindByJobID(ctx, job.ID, 10, 0)
 	require.NoError(t, err)
 	assert.Len(t, found, 3)
+}
+
+func TestBuildContentPath_UsesASCIIDomainDirectory(t *testing.T) {
+	path, err := store.BuildContentPathForTest("data", "https://www.žąsys.lt/paslaugos", "text/html; charset=utf-8")
+	require.NoError(t, err)
+	assert.Contains(t, path, "data/www.xn--sys-hpa81d.lt/")
+	assert.True(t, strings.HasSuffix(path, ".html"))
 }

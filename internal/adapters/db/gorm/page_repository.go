@@ -9,9 +9,11 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/atvirokodosprendimai/crawlerdb/internal/domain/entities"
+	"golang.org/x/net/idna"
 	"gorm.io/gorm"
 )
 
@@ -133,9 +135,15 @@ func buildContentPath(rootDir, normalizedURL, contentType string) (string, error
 		return "", fmt.Errorf("md5 sum too short")
 	}
 
+	domainDir, err := contentDomainDir(normalizedURL)
+	if err != nil {
+		return "", err
+	}
+
 	ext := inferContentExtension(normalizedURL, contentType)
 	parts := []string{
 		rootDir,
+		domainDir,
 		string(sum[0]),
 		string(sum[1]),
 		string(sum[2]),
@@ -144,6 +152,41 @@ func buildContentPath(rootDir, normalizedURL, contentType string) (string, error
 		sum + ext,
 	}
 	return filepath.Join(parts...), nil
+}
+
+// BuildContentPathForTest exposes the storage path builder to external package tests.
+func BuildContentPathForTest(rootDir, normalizedURL, contentType string) (string, error) {
+	path, err := buildContentPath(rootDir, normalizedURL, contentType)
+	if err != nil {
+		return "", err
+	}
+	return filepath.ToSlash(path), nil
+}
+
+var nonASCIIPathSafe = regexp.MustCompile(`[^a-z0-9.-]+`)
+
+func contentDomainDir(rawURL string) (string, error) {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return "", fmt.Errorf("parse content url: %w", err)
+	}
+
+	host := strings.TrimSpace(parsed.Hostname())
+	if host == "" {
+		return "unknown-host", nil
+	}
+
+	asciiHost, err := idna.Lookup.ToASCII(strings.ToLower(host))
+	if err != nil {
+		return "", fmt.Errorf("convert host to ascii: %w", err)
+	}
+
+	asciiHost = nonASCIIPathSafe.ReplaceAllString(asciiHost, "-")
+	asciiHost = strings.Trim(asciiHost, "-.")
+	if asciiHost == "" {
+		return "unknown-host", nil
+	}
+	return asciiHost, nil
 }
 
 func inferContentExtension(rawURL, contentType string) string {
