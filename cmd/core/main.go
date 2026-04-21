@@ -328,6 +328,27 @@ func main() {
 		}
 	}()
 
+	go func() {
+		crawlTimeout := time.Minute
+		ticker := time.NewTicker(15 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				requeued, err := urlRepo.RequeueTimedOutCrawling(ctx, time.Now().Add(-crawlTimeout))
+				if err != nil {
+					logger.Error("requeue timed out crawling URLs", "err", err)
+					continue
+				}
+				if requeued > 0 {
+					logger.Warn("requeued timed out crawling URLs", "count", requeued, "timeout", crawlTimeout)
+				}
+			}
+		}
+	}()
+
 	<-ctx.Done()
 	logger.Info("core shutting down")
 }

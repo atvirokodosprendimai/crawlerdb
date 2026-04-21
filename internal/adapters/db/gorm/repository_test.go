@@ -237,6 +237,42 @@ func TestURLRepository_RequeueCrawlingByDomain(t *testing.T) {
 	assert.Equal(t, 1, counts[entities.URLStatusCrawling])
 }
 
+func TestURLRepository_RequeueTimedOutCrawling(t *testing.T) {
+	jobs, urls, _ := setupDB(t)
+	ctx := context.Background()
+
+	job := newJob()
+	require.NoError(t, jobs.Create(ctx, job))
+
+	u := entities.NewCrawlURL(job.ID, "https://example.com", "https://example.com/", "hash1", 0, "")
+	require.NoError(t, urls.Enqueue(ctx, u))
+
+	claimed, err := urls.Claim(ctx, job.ID, 1)
+	require.NoError(t, err)
+	require.Len(t, claimed, 1)
+
+	staleAt := time.Now().Add(-2 * time.Minute).UTC()
+	require.NoError(t, urls.Complete(ctx, &entities.CrawlURL{
+		ID:         claimed[0].ID,
+		JobID:      claimed[0].JobID,
+		Normalized: claimed[0].Normalized,
+		Depth:      claimed[0].Depth,
+		Status:     entities.URLStatusCrawling,
+		UpdatedAt:  staleAt,
+	}))
+
+	requeued, err := urls.RequeueTimedOutCrawling(ctx, time.Now().Add(-1*time.Minute))
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), requeued)
+
+	found, err := urls.FindByHash(ctx, job.ID, "hash1")
+	require.NoError(t, err)
+	require.NotNil(t, found)
+	assert.Equal(t, entities.URLStatusPending, found.Status)
+	assert.Equal(t, 1, found.RetryCount)
+	assert.Contains(t, found.LastError, "crawl timeout")
+}
+
 func TestURLRepository_Complete_PreservesUniqueColumnsForSparseWorkerPayload(t *testing.T) {
 	jobs, urls, _ := setupDB(t)
 	ctx := context.Background()

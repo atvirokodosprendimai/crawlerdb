@@ -148,6 +148,23 @@ func (r *URLRepository) RequeueCrawlingByDomain(ctx context.Context, jobID, doma
 	return result.RowsAffected, nil
 }
 
+func (r *URLRepository) RequeueTimedOutCrawling(ctx context.Context, before time.Time) (int64, error) {
+	now := time.Now().UTC()
+	result := r.db.WithContext(ctx).
+		Model(&URLModel{}).
+		Where("status = ? AND updated_at < ?", string(entities.URLStatusCrawling), before).
+		Updates(map[string]any{
+			"status":      string(entities.URLStatusPending),
+			"retry_count": gorm.Expr("retry_count + 1"),
+			"updated_at":  now,
+			"last_error":  fmt.Sprintf("crawl timeout after %s; requeued", now.Sub(before).Round(time.Second)),
+		})
+	if result.Error != nil {
+		return 0, result.Error
+	}
+	return result.RowsAffected, nil
+}
+
 func (r *URLRepository) Complete(ctx context.Context, url *entities.CrawlURL) error {
 	updates := map[string]any{
 		"status":      string(url.Status),
