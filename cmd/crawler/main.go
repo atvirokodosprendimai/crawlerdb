@@ -8,11 +8,12 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/atvirokodosprendimai/crawlerdb/internal/adapters/antibot"
 	"github.com/atvirokodosprendimai/crawlerdb/internal/adapters/config"
 	fetcher "github.com/atvirokodosprendimai/crawlerdb/internal/adapters/http"
+	broker "github.com/atvirokodosprendimai/crawlerdb/internal/adapters/nats"
 	"github.com/atvirokodosprendimai/crawlerdb/internal/adapters/robots"
 	"github.com/atvirokodosprendimai/crawlerdb/internal/app/services"
-	broker "github.com/atvirokodosprendimai/crawlerdb/internal/adapters/nats"
 	"github.com/nats-io/nats.go"
 )
 
@@ -49,7 +50,8 @@ func main() {
 	robotsChecker := robots.NewChecker(httpFetcher, cfg.Crawler.UserAgent, cfg.Crawler.RobotsTTL.Duration)
 	rateLimiter := fetcher.NewAdaptiveRateLimiter(cfg.Crawler.DefaultRateLimit.Duration)
 
-	worker := services.NewWorkerService(httpFetcher, robotsChecker, rateLimiter, mb, cfg.Crawler.PoolSize, logger)
+	detector := antibot.NewDetector()
+	worker := services.NewWorkerService(httpFetcher, robotsChecker, rateLimiter, detector, mb, cfg.Crawler.PoolSize, logger)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()

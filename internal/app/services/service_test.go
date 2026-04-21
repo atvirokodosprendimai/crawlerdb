@@ -250,7 +250,7 @@ func TestWorkerService_ProcessTask(t *testing.T) {
 	checker := robots.NewChecker(mockHTTPFetcher, "TestBot", time.Hour)
 	rl := fetcher.NewAdaptiveRateLimiter(10 * time.Millisecond)
 
-	worker := services.NewWorkerService(mockHTTPFetcher, checker, rl, b, 2, nil)
+	worker := services.NewWorkerService(mockHTTPFetcher, checker, rl, nil, b, 2, nil)
 
 	task := services.CrawlTask{
 		JobID:    "job1",

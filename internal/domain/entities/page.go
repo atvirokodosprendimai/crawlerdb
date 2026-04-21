@@ -48,9 +48,18 @@ func NewPage(urlID, jobID string) *Page {
 
 // CrawlResult wraps the outcome of crawling a single URL.
 type CrawlResult struct {
-	URL            *CrawlURL       `json:"url"`
-	Page           *Page           `json:"page"`
-	DiscoveredURLs []DiscoveredLink `json:"discovered_urls"`
-	Error          string          `json:"error,omitempty"`
-	Success        bool            `json:"success"`
+	URL            *CrawlURL        `json:"url"`
+	Page           *Page            `json:"page"`
+	DiscoveredURLs []DiscoveredLink  `json:"discovered_urls"`
+	Error          string           `json:"error,omitempty"`
+	Success        bool             `json:"success"`
+	AntiBotEvent   *AntiBotDetection `json:"antibot_event,omitempty"`
+}
+
+// AntiBotDetection records an anti-bot signal found during a crawl.
+type AntiBotDetection struct {
+	Detected  bool   `json:"detected"`
+	EventType string `json:"event_type"`
+	Provider  string `json:"provider"`
+	Details   string `json:"details"`
 }

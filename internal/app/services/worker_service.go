@@ -20,6 +20,7 @@ type WorkerService struct {
 	fetcher     ports.Fetcher
 	robots      ports.RobotsChecker
 	rateLimiter ports.RateLimiter
+	detector    ports.AntiBotDetector
 	msgBroker   ports.MessageBroker
 	extractor   *extraction.Extractor
 	poolSize    int
@@ -31,6 +32,7 @@ func NewWorkerService(
 	f ports.Fetcher,
 	robots ports.RobotsChecker,
 	rl ports.RateLimiter,
+	detector ports.AntiBotDetector,
 	mb ports.MessageBroker,
 	poolSize int,
 	logger *slog.Logger,
@@ -42,6 +44,7 @@ func NewWorkerService(
 		fetcher:     f,
 		robots:      robots,
 		rateLimiter: rl,
+		detector:    detector,
 		msgBroker:   mb,
 		extractor:   extraction.NewExtractor(),
 		poolSize:    poolSize,
@@ -98,6 +101,26 @@ func (w *WorkerService) ProcessTask(ctx context.Context, task CrawlTask) *entiti
 	if err != nil {
 		result.Error = fmt.Sprintf("read body: %v", err)
 		return result
+	}
+
+	// Anti-bot detection.
+	if w.detector != nil {
+		detection := w.detector.Analyze(resp, body)
+		if detection.Detected {
+			w.logger.Warn("anti-bot detected",
+				"url", task.URL,
+				"event", detection.EventType,
+				"provider", detection.Provider,
+			)
+			result.Error = fmt.Sprintf("anti-bot: %s (%s)", detection.EventType, detection.Provider)
+			result.AntiBotEvent = &entities.AntiBotDetection{
+				Detected:  detection.Detected,
+				EventType: detection.EventType,
+				Provider:  detection.Provider,
+				Details:   detection.Details,
+			}
+			return result
+		}
 	}
 
 	// Extract content.
