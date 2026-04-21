@@ -6,3 +6,4 @@
 - 2026-04-21 `b2795e1` feat: phase 2 — domain model (TDD)
 - 2026-04-21 `7da9389` feat: phase 3 — database layer
 - 2026-04-21 `5e30aba` feat: phase 4 — NATS messaging adapter
+- 2026-04-21 `2699db0` feat: phase 5 — HTTP fetcher + robots.txt

@@ -1,0 +1,125 @@
+package extraction
+
+import (
+	"encoding/json"
+	"io"
+	"strings"
+	"time"
+
+	fetcher "github.com/atvirokodosprendimai/crawlerdb/internal/adapters/http"
+	"github.com/atvirokodosprendimai/crawlerdb/internal/domain/entities"
+	"github.com/atvirokodosprendimai/crawlerdb/internal/domain/ports"
+	"github.com/atvirokodosprendimai/crawlerdb/internal/domain/valueobj"
+)
+
+// Extractor processes an HTTP response into a Page entity.
+type Extractor struct {
+	linkExtractor *fetcher.LinkExtractor
+}
+
+// NewExtractor creates a new content extractor.
+func NewExtractor() *Extractor {
+	return &Extractor{
+		linkExtractor: fetcher.NewLinkExtractor(),
+	}
+}
+
+// Extract processes a fetch response into a Page based on the extraction profile.
+func (e *Extractor) Extract(
+	resp *ports.FetchResponse,
+	body []byte,
+	urlID, jobID, pageURL, seedHost string,
+	profile valueobj.ExtractionProfile,
+	duration time.Duration,
+) *entities.Page {
+	page := entities.NewPage(urlID, jobID)
+	page.HTTPStatus = resp.StatusCode
+	page.ContentType = resp.ContentType
+	page.FetchDuration = duration
+	page.FetchedAt = time.Now().UTC()
+
+	// Extract headers.
+	headers := make(map[string]string)
+	for k, v := range resp.Headers {
+		if len(v) > 0 {
+			headers[k] = v[0]
+		}
+	}
+	page.Headers = headers
+
+	// Always extract title and meta (even minimal).
+	reader := strings.NewReader(string(body))
+	page.Title = fetcher.ExtractTitle(reader)
+
+	reader.Reset(string(body))
+	page.MetaTags = fetcher.ExtractMetaTags(reader)
+
+	// Always extract links.
+	reader.Reset(string(body))
+	page.Links = e.linkExtractor.ExtractLinks(reader, pageURL, seedHost)
+
+	// Standard: include HTML body.
+	if profile.IncludesHTML() {
+		page.HTMLBody = string(body)
+	}
+
+	// Full: include text content and structured data.
+	if profile.IncludesText() {
+		reader.Reset(string(body))
+		page.TextContent = fetcher.ExtractText(reader)
+	}
+
+	if profile.IncludesStructuredData() {
+		page.StructuredData = extractStructuredData(body)
+	}
+
+	return page
+}
+
+// extractStructuredData finds JSON-LD blocks in HTML.
+func extractStructuredData(body []byte) []any {
+	content := string(body)
+	var results []any
+
+	// Simple JSON-LD extraction: find <script type="application/ld+json">...</script>
+	for {
+		idx := strings.Index(content, `type="application/ld+json"`)
+		if idx < 0 {
+			idx = strings.Index(content, `type='application/ld+json'`)
+		}
+		if idx < 0 {
+			break
+		}
+
+		// Find the > after the type attribute.
+		start := strings.Index(content[idx:], ">")
+		if start < 0 {
+			break
+		}
+		start += idx + 1
+
+		// Find closing </script>.
+		end := strings.Index(content[start:], "</script>")
+		if end < 0 {
+			break
+		}
+
+		jsonStr := strings.TrimSpace(content[start : start+end])
+		if jsonStr != "" {
+			var data any
+			if err := json.Unmarshal([]byte(jsonStr), &data); err == nil {
+				results = append(results, data)
+			}
+		}
+
+		content = content[start+end:]
+	}
+
+	return results
+}
+
+// ReadBody reads the full response body and returns it as bytes.
+func ReadBody(body io.ReadCloser) ([]byte, error) {
+	defer body.Close()
+	return io.ReadAll(body)
+}

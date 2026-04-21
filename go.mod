@@ -10,6 +10,7 @@ require (
 	github.com/pelletier/go-toml/v2 v2.3.0
 	github.com/pressly/goose/v3 v3.27.0
 	github.com/stretchr/testify v1.11.1
+	golang.org/x/net v0.51.0
 	gorm.io/gorm v1.31.1
 )
 
