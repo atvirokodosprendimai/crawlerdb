@@ -2,3 +2,8 @@
 # MemPalace per-project files (issue #185)
 mempalace.yaml
 entities.json
+
+# Build artifacts
+core
+crawler
+gui
