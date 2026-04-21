@@ -11,10 +11,10 @@ import (
 	"time"
 
 	"github.com/a-h/templ"
-	"github.com/starfederation/datastar-go/datastar"
 	"github.com/atvirokodosprendimai/crawlerdb/internal/domain/ports"
 	"github.com/atvirokodosprendimai/crawlerdb/internal/domain/valueobj"
 	"github.com/go-chi/chi/v5"
+	"github.com/starfederation/datastar-go/datastar"
 	"gorm.io/gorm"
 )
 
@@ -75,10 +75,12 @@ func (h *datastarDashboardHandlers) handleCreateJob(w http.ResponseWriter, r *ht
 	}{
 		SeedURL: strings.TrimSpace(signals.SeedURL),
 		Config: valueobj.CrawlConfig{
-			Scope:      valueobj.CrawlScope(signals.Scope),
-			MaxDepth:   signals.MaxDepth,
-			Extraction: valueobj.ExtractionStandard,
-			UserAgent:  "CrawlerDB/1.0",
+			Scope:          valueobj.CrawlScope(signals.Scope),
+			MaxDepth:       signals.MaxDepth,
+			Extraction:     valueobj.ExtractionStandard,
+			UserAgent:      "CrawlerDB/1.0",
+			MaxConcurrency: 1,
+			RateLimit:      valueobj.Duration{1 * time.Second},
 		},
 	}
 	if err := req.Config.Validate(); err != nil {
