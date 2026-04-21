@@ -81,6 +81,47 @@ func (r *URLRepository) Claim(ctx context.Context, jobID string, limit int) ([]*
 	return result, nil
 }
 
+func (r *URLRepository) ClaimByIDs(ctx context.Context, jobID string, ids []string) ([]*entities.CrawlURL, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+
+	var models []URLModel
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("job_id = ? AND status = ? AND id IN ?", jobID, string(entities.URLStatusPending), ids).
+			Order("depth ASC, created_at ASC").
+			Find(&models).Error; err != nil {
+			return err
+		}
+		if len(models) == 0 {
+			return nil
+		}
+
+		claimedIDs := make([]string, len(models))
+		for i, m := range models {
+			claimedIDs[i] = m.ID
+		}
+		now := time.Now().UTC()
+		return tx.Model(&URLModel{}).
+			Where("job_id = ? AND status = ? AND id IN ?", jobID, string(entities.URLStatusPending), claimedIDs).
+			Updates(map[string]any{
+				"status":     string(entities.URLStatusCrawling),
+				"updated_at": now,
+			}).Error
+	})
+	if err != nil {
+		return nil, fmt.Errorf("claim URLs by IDs: %w", err)
+	}
+
+	result := make([]*entities.CrawlURL, len(models))
+	for i, m := range models {
+		u := modelToURL(&m)
+		u.Status = entities.URLStatusCrawling
+		result[i] = u
+	}
+	return result, nil
+}
+
 func (r *URLRepository) Complete(ctx context.Context, url *entities.CrawlURL) error {
 	updates := map[string]any{
 		"status":      string(url.Status),

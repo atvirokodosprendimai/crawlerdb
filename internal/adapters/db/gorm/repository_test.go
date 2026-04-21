@@ -154,6 +154,24 @@ func TestURLRepository_Dedup(t *testing.T) {
 	assert.Len(t, pending, 1)
 }
 
+func TestURLRepository_DedupByNormalized(t *testing.T) {
+	jobs, urls, _ := setupDB(t)
+	ctx := context.Background()
+
+	job := newJob()
+	require.NoError(t, jobs.Create(ctx, job))
+
+	u1 := entities.NewCrawlURL(job.ID, "https://example.com", "https://example.com/", "hash1", 0, "")
+	u2 := entities.NewCrawlURL(job.ID, "https://example.com/", "https://example.com/", "hash2", 1, "")
+
+	require.NoError(t, urls.Enqueue(ctx, u1))
+	require.NoError(t, urls.Enqueue(ctx, u2))
+
+	pending, err := urls.FindPending(ctx, job.ID, 100)
+	require.NoError(t, err)
+	assert.Len(t, pending, 1)
+}
+
 func TestURLRepository_FindByHash(t *testing.T) {
 	jobs, urls, _ := setupDB(t)
 	ctx := context.Background()

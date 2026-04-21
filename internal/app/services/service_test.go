@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"time"
+
 	store "github.com/atvirokodosprendimai/crawlerdb/internal/adapters/db/gorm"
 	fetcher "github.com/atvirokodosprendimai/crawlerdb/internal/adapters/http"
 	broker "github.com/atvirokodosprendimai/crawlerdb/internal/adapters/nats"
@@ -21,7 +23,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
-	"time"
 )
 
 // helpers
@@ -77,6 +78,27 @@ func TestJobService_CreateJob(t *testing.T) {
 	assert.Equal(t, job.ID, found.ID)
 }
 
+func TestJobService_CreateJobRejectsActiveDomainDuplicate(t *testing.T) {
+	db := setupTestDB(t)
+	b := setupTestNATS(t)
+	jobRepo := store.NewJobRepository(db)
+	urlRepo := store.NewURLRepository(db)
+	svc := services.NewJobService(jobRepo, urlRepo, b)
+	ctx := context.Background()
+
+	job, err := svc.CreateJob(ctx, "https://example.com", testConfig())
+	require.NoError(t, err)
+	require.NoError(t, svc.StartJob(ctx, job.ID))
+
+	_, err = svc.CreateJob(ctx, "https://example.com/about", testConfig())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "already exists for domain example.com")
+
+	require.NoError(t, svc.StopJob(ctx, job.ID))
+	_, err = svc.CreateJob(ctx, "https://example.com/about", testConfig())
+	require.NoError(t, err)
+}
+
 func TestJobService_StartPauseResumeStop(t *testing.T) {
 	db := setupTestDB(t)
 	b := setupTestNATS(t)
@@ -113,8 +135,8 @@ func TestJobService_ListJobs(t *testing.T) {
 	svc := services.NewJobService(jobRepo, urlRepo, b)
 	ctx := context.Background()
 
-	for range 3 {
-		_, err := svc.CreateJob(ctx, "https://example.com", testConfig())
+	for i := range 3 {
+		_, err := svc.CreateJob(ctx, "https://example"+string(rune('a'+i))+".com", testConfig())
 		require.NoError(t, err)
 	}
 
@@ -176,12 +198,50 @@ func TestCrawlService_EnqueueAndDispatch(t *testing.T) {
 	defer sub.Unsubscribe()
 
 	// Dispatch.
-	n, err := crawlSvc.DispatchURLs(ctx, job.ID, job.Config, 10)
+	n, err := crawlSvc.DispatchURLs(ctx, job.ID, job.Config, 1)
 	require.NoError(t, err)
 	assert.Equal(t, 1, n)
 
 	<-done
 	assert.NotEmpty(t, received)
+}
+
+func TestCrawlService_DispatchURLsRateLimitsPerDomain(t *testing.T) {
+	db := setupTestDB(t)
+	b := setupTestNATS(t)
+	jobRepo := store.NewJobRepository(db)
+	urlRepo := store.NewURLRepository(db)
+	pageRepo := store.NewPageRepository(db, store.WithContentDir(filepath.Join(t.TempDir(), "data")))
+	crawlSvc := services.NewCrawlService(jobRepo, urlRepo, pageRepo, b)
+	jobSvc := services.NewJobService(jobRepo, urlRepo, b)
+	ctx := context.Background()
+
+	job, err := jobSvc.CreateJob(ctx, "https://example.com", valueobj.CrawlConfig{
+		Scope:      valueobj.ScopeSameDomain,
+		MaxDepth:   3,
+		Extraction: valueobj.ExtractionStandard,
+		UserAgent:  "TestBot/1.0",
+		RateLimit:  valueobj.Duration{Duration: 20 * time.Millisecond},
+	})
+	require.NoError(t, err)
+	require.NoError(t, jobSvc.StartJob(ctx, job.ID))
+
+	require.NoError(t, urlRepo.Enqueue(ctx, entities.NewCrawlURL(job.ID, "https://example.com", "https://example.com/", "hash1", 0, "")))
+	require.NoError(t, urlRepo.Enqueue(ctx, entities.NewCrawlURL(job.ID, "https://example.com/about", "https://example.com/about", "hash2", 1, "")))
+
+	n, err := crawlSvc.DispatchURLs(ctx, job.ID, job.Config, 10)
+	require.NoError(t, err)
+	assert.Equal(t, 1, n)
+
+	n, err = crawlSvc.DispatchURLs(ctx, job.ID, job.Config, 10)
+	require.NoError(t, err)
+	assert.Equal(t, 0, n)
+
+	time.Sleep(25 * time.Millisecond)
+
+	n, err = crawlSvc.DispatchURLs(ctx, job.ID, job.Config, 10)
+	require.NoError(t, err)
+	assert.Equal(t, 1, n)
 }
 
 func TestCrawlService_ProcessResult(t *testing.T) {

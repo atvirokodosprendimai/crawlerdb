@@ -34,6 +34,16 @@ func (s *JobService) CreateJob(ctx context.Context, seedURL string, cfg valueobj
 		return nil, fmt.Errorf("invalid config: %w", err)
 	}
 
+	seedHost := extractHost(seedURL)
+	if seedHost == "" {
+		return nil, fmt.Errorf("invalid seed URL: %q", seedURL)
+	}
+	if existing, err := s.findActiveJobByDomain(ctx, seedHost); err != nil {
+		return nil, fmt.Errorf("find active job by domain: %w", err)
+	} else if existing != nil {
+		return nil, fmt.Errorf("active job %s already exists for domain %s", existing.ID, seedHost)
+	}
+
 	job := entities.NewJob(seedURL, cfg)
 	if err := s.jobRepo.Create(ctx, job); err != nil {
 		return nil, fmt.Errorf("create job: %w", err)
@@ -49,6 +59,21 @@ func (s *JobService) CreateJob(ctx context.Context, seedURL string, cfg valueobj
 	_ = s.broker.Publish(ctx, broker.SubjectJobCreated, data)
 
 	return job, nil
+}
+
+func (s *JobService) findActiveJobByDomain(ctx context.Context, domain string) (*entities.Job, error) {
+	for _, status := range []entities.JobStatus{entities.JobStatusPending, entities.JobStatusRunning, entities.JobStatusPaused} {
+		jobs, err := s.jobRepo.FindByStatus(ctx, status)
+		if err != nil {
+			return nil, err
+		}
+		for _, job := range jobs {
+			if extractHost(job.SeedURL) == domain {
+				return job, nil
+			}
+		}
+	}
+	return nil, nil
 }
 
 // StartJob transitions job to running and enqueues the seed URL.

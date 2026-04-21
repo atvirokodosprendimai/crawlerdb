@@ -20,6 +20,7 @@ type URLRepository interface {
 	Enqueue(ctx context.Context, url *entities.CrawlURL) error
 	EnqueueBatch(ctx context.Context, urls []*entities.CrawlURL) error
 	Claim(ctx context.Context, jobID string, limit int) ([]*entities.CrawlURL, error)
+	ClaimByIDs(ctx context.Context, jobID string, ids []string) ([]*entities.CrawlURL, error)
 	Complete(ctx context.Context, url *entities.CrawlURL) error
 	FindByHash(ctx context.Context, jobID, urlHash string) (*entities.CrawlURL, error)
 	FindPending(ctx context.Context, jobID string, limit int) ([]*entities.CrawlURL, error)

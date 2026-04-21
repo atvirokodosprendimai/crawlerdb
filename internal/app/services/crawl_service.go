@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"sync"
+	"time"
 
 	broker "github.com/atvirokodosprendimai/crawlerdb/internal/adapters/nats"
 	"github.com/atvirokodosprendimai/crawlerdb/internal/domain/entities"
@@ -22,6 +24,8 @@ type CrawlService struct {
 	pageRepo   ports.PageRepository
 	broker     ports.MessageBroker
 	normalizer *services.URLNormalizer
+	mu         sync.Mutex
+	lastSent   map[string]time.Time
 }
 
 // NewCrawlService creates a new CrawlService.
@@ -37,6 +41,7 @@ func NewCrawlService(
 		pageRepo:   pageRepo,
 		broker:     broker,
 		normalizer: services.NewURLNormalizer(),
+		lastSent:   make(map[string]time.Time),
 	}
 }
 
@@ -63,11 +68,6 @@ func (s *CrawlService) EnqueueSeedURL(ctx context.Context, job *entities.Job) er
 
 // DispatchURLs claims pending URLs and publishes them to NATS for workers.
 func (s *CrawlService) DispatchURLs(ctx context.Context, jobID string, cfg valueobj.CrawlConfig, limit int) (int, error) {
-	claimed, err := s.urlRepo.Claim(ctx, jobID, limit)
-	if err != nil {
-		return 0, fmt.Errorf("claim URLs: %w", err)
-	}
-
 	job, err := s.jobRepo.FindByID(ctx, jobID)
 	if err != nil {
 		return 0, fmt.Errorf("find job: %w", err)
@@ -77,6 +77,18 @@ func (s *CrawlService) DispatchURLs(ctx context.Context, jobID string, cfg value
 	}
 
 	seedHost := extractHost(job.SeedURL)
+	selectedIDs, err := s.selectDispatchIDs(ctx, jobID, cfg, limit)
+	if err != nil {
+		return 0, fmt.Errorf("select dispatch URLs: %w", err)
+	}
+	if len(selectedIDs) == 0 {
+		return 0, nil
+	}
+
+	claimed, err := s.urlRepo.ClaimByIDs(ctx, jobID, selectedIDs)
+	if err != nil {
+		return 0, fmt.Errorf("claim URLs: %w", err)
+	}
 
 	for _, u := range claimed {
 		task := CrawlTask{
@@ -91,9 +103,66 @@ func (s *CrawlService) DispatchURLs(ctx context.Context, jobID string, cfg value
 		if err := s.broker.Publish(ctx, broker.CrawlDispatchSubject(jobID), data); err != nil {
 			return 0, fmt.Errorf("publish task: %w", err)
 		}
+		s.markDispatched(extractHost(u.Normalized))
 	}
 
 	return len(claimed), nil
+}
+
+func (s *CrawlService) selectDispatchIDs(ctx context.Context, jobID string, cfg valueobj.CrawlConfig, limit int) ([]string, error) {
+	if limit <= 0 {
+		return nil, nil
+	}
+
+	searchLimit := max(limit*20, 100)
+	pending, err := s.urlRepo.FindPending(ctx, jobID, searchLimit)
+	if err != nil {
+		return nil, err
+	}
+
+	interval := cfg.RateLimit.Duration
+	now := time.Now()
+	selected := make([]string, 0, limit)
+	seenDomains := make(map[string]struct{}, limit)
+
+	for _, u := range pending {
+		if len(selected) >= limit {
+			break
+		}
+		domain := extractHost(u.Normalized)
+		if domain == "" {
+			continue
+		}
+		if _, seen := seenDomains[domain]; seen {
+			continue
+		}
+		if interval > 0 && !s.canDispatch(domain, now, interval) {
+			continue
+		}
+		selected = append(selected, u.ID)
+		seenDomains[domain] = struct{}{}
+	}
+
+	return selected, nil
+}
+
+func (s *CrawlService) canDispatch(domain string, now time.Time, interval time.Duration) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	last, ok := s.lastSent[domain]
+	if !ok {
+		return true
+	}
+	return now.Sub(last) >= interval
+}
+
+func (s *CrawlService) markDispatched(domain string) {
+	if domain == "" {
+		return
+	}
+	s.mu.Lock()
+	s.lastSent[domain] = time.Now()
+	s.mu.Unlock()
 }
 
 // ProcessResult handles a crawl result from a worker.

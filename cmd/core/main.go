@@ -237,10 +237,6 @@ func main() {
 		// Dispatch more URLs for this job.
 		job, _ := jobSvc.GetJob(ctx, result.URL.JobID)
 		if job != nil && job.Status == entities.JobStatusRunning {
-			//TODO: review - this may cause too many dispatches if results come in rapidly. Consider a more controlled dispatch strategy.
-			// _, _ = crawlSvc.DispatchURLs(ctx, job.ID, job.Config, 10)
-			_, _ = crawlSvc.DispatchURLs(ctx, job.ID, job.Config, 1)
-
 			// Check completion.
 			done, _ := crawlSvc.CheckCompletion(ctx, job.ID)
 			if done {
@@ -252,9 +248,9 @@ func main() {
 
 	logger.Info("core started", "nats", cfg.NATS.URL, "db", cfg.Database.Path)
 
-	// Run dispatch loop for active jobs.
+	// Run dispatch loop for active jobs. CrawlService enforces per-domain pacing.
 	go func() {
-		ticker := time.NewTicker(2 * time.Second)
+		ticker := time.NewTicker(250 * time.Millisecond)
 		defer ticker.Stop()
 		for {
 			select {
@@ -264,9 +260,7 @@ func main() {
 				jobs, _ := jobSvc.ListJobs(ctx, 100, 0)
 				for _, job := range jobs {
 					if job.Status == entities.JobStatusRunning {
-						//TODO: review - this may cause too many dispatches if jobs are running. Consider a more controlled dispatch strategy.
-						// _, _ = crawlSvc.DispatchURLs(ctx, job.ID, job.Config, 10)
-						_, _ = crawlSvc.DispatchURLs(ctx, job.ID, job.Config, 1)
+						_, _ = crawlSvc.DispatchURLs(ctx, job.ID, job.Config, cfg.Crawler.PoolSize)
 					}
 				}
 			}
