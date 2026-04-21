@@ -8,3 +8,4 @@
 - 2026-04-21 `5e30aba` feat: phase 4 — NATS messaging adapter
 - 2026-04-21 `2699db0` feat: phase 5 — HTTP fetcher + robots.txt
 - 2026-04-21 `f078c83` feat: phase 6 — link extraction + content extraction
+- 2026-04-21 `bb0cf20` feat: phase 7+8 — core orchestrator + crawler worker

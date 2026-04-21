@@ -4,12 +4,14 @@ go 1.25.0
 
 require (
 	github.com/glebarez/sqlite v1.11.0
+	github.com/go-chi/chi/v5 v5.2.5
 	github.com/nats-io/nats-server/v2 v2.12.7
 	github.com/nats-io/nats.go v1.51.0
 	github.com/oklog/ulid/v2 v2.1.1
 	github.com/pelletier/go-toml/v2 v2.3.0
 	github.com/pressly/goose/v3 v3.27.0
 	github.com/stretchr/testify v1.11.1
+	github.com/urfave/cli/v3 v3.8.0
 	golang.org/x/net v0.51.0
 	gorm.io/gorm v1.31.1
 )
