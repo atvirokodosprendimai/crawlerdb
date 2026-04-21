@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/atvirokodosprendimai/crawlerdb/internal/adapters/config"
 	broker "github.com/atvirokodosprendimai/crawlerdb/internal/adapters/nats"
@@ -38,9 +39,11 @@ func crawlCommand() *cli.Command {
 					b := broker.NewFromConn(conn)
 
 					cfg := valueobj.CrawlConfig{
-						Scope:      valueobj.CrawlScope(cmd.String("scope")),
-						MaxDepth:   int(cmd.Int("max-depth")),
-						Extraction: valueobj.ExtractionLevel(cmd.String("extraction")),
+						Scope:          valueobj.CrawlScope(cmd.String("scope")),
+						MaxDepth:       int(cmd.Int("max-depth")),
+						Extraction:     valueobj.ExtractionLevel(cmd.String("extraction")),
+						MaxConcurrency: 2,
+						RateLimit:      valueobj.Duration{1 * time.Second},
 					}
 
 					// Load defaults from config file.
