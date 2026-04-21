@@ -209,6 +209,34 @@ func TestURLRepository_CountByStatus(t *testing.T) {
 	assert.Equal(t, 3, counts[entities.URLStatusPending])
 }
 
+func TestURLRepository_RequeueCrawlingByDomain(t *testing.T) {
+	jobs, urls, _ := setupDB(t)
+	ctx := context.Background()
+
+	job := newJob()
+	require.NoError(t, jobs.Create(ctx, job))
+
+	u1 := entities.NewCrawlURL(job.ID, "https://example.com", "https://example.com/", "hash1", 0, "")
+	u2 := entities.NewCrawlURL(job.ID, "https://example.com/about", "https://example.com/about", "hash2", 1, "")
+	u3 := entities.NewCrawlURL(job.ID, "https://other.com", "https://other.com/", "hash3", 0, "")
+	require.NoError(t, urls.Enqueue(ctx, u1))
+	require.NoError(t, urls.Enqueue(ctx, u2))
+	require.NoError(t, urls.Enqueue(ctx, u3))
+
+	claimed, err := urls.Claim(ctx, job.ID, 10)
+	require.NoError(t, err)
+	require.Len(t, claimed, 3)
+
+	requeued, err := urls.RequeueCrawlingByDomain(ctx, job.ID, "example.com")
+	require.NoError(t, err)
+	assert.Equal(t, int64(2), requeued)
+
+	counts, err := urls.CountByStatus(ctx, job.ID)
+	require.NoError(t, err)
+	assert.Equal(t, 2, counts[entities.URLStatusPending])
+	assert.Equal(t, 1, counts[entities.URLStatusCrawling])
+}
+
 func TestURLRepository_Complete_PreservesUniqueColumnsForSparseWorkerPayload(t *testing.T) {
 	jobs, urls, _ := setupDB(t)
 	ctx := context.Background()

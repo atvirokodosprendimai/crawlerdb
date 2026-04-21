@@ -122,6 +122,32 @@ func (r *URLRepository) ClaimByIDs(ctx context.Context, jobID string, ids []stri
 	return result, nil
 }
 
+func (r *URLRepository) RequeueCrawlingByDomain(ctx context.Context, jobID, domain string) (int64, error) {
+	now := time.Now().UTC()
+	result := r.db.WithContext(ctx).
+		Model(&URLModel{}).
+		Where("job_id = ? AND status = ?", jobID, string(entities.URLStatusCrawling)).
+		Where(`
+			CASE
+				WHEN INSTR(SUBSTR(normalized, INSTR(normalized, '://') + 3), '/') > 0
+				THEN SUBSTR(
+					SUBSTR(normalized, INSTR(normalized, '://') + 3),
+					1,
+					INSTR(SUBSTR(normalized, INSTR(normalized, '://') + 3), '/') - 1
+				)
+				ELSE SUBSTR(normalized, INSTR(normalized, '://') + 3)
+			END = ?
+		`, domain).
+		Updates(map[string]any{
+			"status":     string(entities.URLStatusPending),
+			"updated_at": now,
+		})
+	if result.Error != nil {
+		return 0, result.Error
+	}
+	return result.RowsAffected, nil
+}
+
 func (r *URLRepository) Complete(ctx context.Context, url *entities.CrawlURL) error {
 	updates := map[string]any{
 		"status":      string(url.Status),

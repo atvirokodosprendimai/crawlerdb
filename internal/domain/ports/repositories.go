@@ -21,6 +21,7 @@ type URLRepository interface {
 	EnqueueBatch(ctx context.Context, urls []*entities.CrawlURL) error
 	Claim(ctx context.Context, jobID string, limit int) ([]*entities.CrawlURL, error)
 	ClaimByIDs(ctx context.Context, jobID string, ids []string) ([]*entities.CrawlURL, error)
+	RequeueCrawlingByDomain(ctx context.Context, jobID, domain string) (int64, error)
 	Complete(ctx context.Context, url *entities.CrawlURL) error
 	FindByHash(ctx context.Context, jobID, urlHash string) (*entities.CrawlURL, error)
 	FindPending(ctx context.Context, jobID string, limit int) ([]*entities.CrawlURL, error)

@@ -143,14 +143,15 @@ func main() {
 		if !assigned {
 			existing, _ := domainRepo.FindByDomain(ctx, task.JobID, taskDomain)
 			if existing != nil && existing.WorkerID != identity.ID() {
-				// Another worker has this domain. Skip.
-				logger.Debug("skip task for foreign domain assignment",
+				// Task was already claimed and marked crawling by core. Never drop it here,
+				// or the URL will remain stuck in crawling forever with no result.
+				logger.Warn("processing task despite foreign domain assignment",
 					"domain", taskDomain,
 					"job_id", task.JobID,
 					"owner_worker_id", existing.WorkerID,
+					"worker_id", identity.ID(),
 					"url", task.URL,
 				)
-				return
 			}
 			if existing == nil {
 				// Claim domain.

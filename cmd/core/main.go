@@ -291,6 +291,30 @@ func main() {
 						"hostname", w.Hostname,
 						"last_heartbeat", w.LastHeartbeat,
 					)
+					assignments, err := domainRepo.FindByWorker(ctx, w.ID)
+					if err != nil {
+						logger.Error("find domains for stale worker", "worker_id", w.ID, "err", err)
+					}
+					for _, assignment := range assignments {
+						requeued, err := urlRepo.RequeueCrawlingByDomain(ctx, assignment.JobID, assignment.Domain)
+						if err != nil {
+							logger.Error("requeue crawling URLs for stale worker",
+								"worker_id", w.ID,
+								"job_id", assignment.JobID,
+								"domain", assignment.Domain,
+								"err", err,
+							)
+							continue
+						}
+						if requeued > 0 {
+							logger.Warn("requeued crawling URLs for stale worker",
+								"worker_id", w.ID,
+								"job_id", assignment.JobID,
+								"domain", assignment.Domain,
+								"count", requeued,
+							)
+						}
+					}
 					// Release all domain assignments.
 					if err := domainRepo.ReleaseByWorker(ctx, w.ID); err != nil {
 						logger.Error("release domains for stale worker", "worker_id", w.ID, "err", err)
