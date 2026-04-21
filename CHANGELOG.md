@@ -7,3 +7,4 @@
 - 2026-04-21 `7da9389` feat: phase 3 — database layer
 - 2026-04-21 `5e30aba` feat: phase 4 — NATS messaging adapter
 - 2026-04-21 `2699db0` feat: phase 5 — HTTP fetcher + robots.txt
+- 2026-04-21 `f078c83` feat: phase 6 — link extraction + content extraction
