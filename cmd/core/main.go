@@ -237,7 +237,9 @@ func main() {
 		// Dispatch more URLs for this job.
 		job, _ := jobSvc.GetJob(ctx, result.URL.JobID)
 		if job != nil && job.Status == entities.JobStatusRunning {
-			_, _ = crawlSvc.DispatchURLs(ctx, job.ID, job.Config, 10)
+			//TODO: review - this may cause too many dispatches if results come in rapidly. Consider a more controlled dispatch strategy.
+			// _, _ = crawlSvc.DispatchURLs(ctx, job.ID, job.Config, 10)
+			_, _ = crawlSvc.DispatchURLs(ctx, job.ID, job.Config, 1)
 
 			// Check completion.
 			done, _ := crawlSvc.CheckCompletion(ctx, job.ID)
@@ -262,7 +264,9 @@ func main() {
 				jobs, _ := jobSvc.ListJobs(ctx, 100, 0)
 				for _, job := range jobs {
 					if job.Status == entities.JobStatusRunning {
-						_, _ = crawlSvc.DispatchURLs(ctx, job.ID, job.Config, 10)
+						//TODO: review - this may cause too many dispatches if jobs are running. Consider a more controlled dispatch strategy.
+						// _, _ = crawlSvc.DispatchURLs(ctx, job.ID, job.Config, 10)
+						_, _ = crawlSvc.DispatchURLs(ctx, job.ID, job.Config, 1)
 					}
 				}
 			}
