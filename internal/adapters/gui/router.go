@@ -464,12 +464,21 @@ func NewRouter(db *gorm.DB, broker ports.MessageBroker, logger *slog.Logger) *Ro
 	staticFS, _ := fs.Sub(web.StaticFS, "static")
 	fileServer := http.FileServer(http.FS(staticFS))
 	r.Handle("/assets/*", http.StripPrefix("/assets/", fileServer))
+	r.Get("/jobs/{id}/settings", handleJobSettingsPage(jobRepo))
+	r.Post("/jobs/{id}/settings", handleJobSettingsUpdate(jobRepo))
 	r.Get("/", templ.Handler(DashboardPage()).ServeHTTP)
 
 	return &Router{
 		handler: r,
 		sse:     sseBroker,
 		sub:     sub,
+	}
+}
+
+func renderTempl(w http.ResponseWriter, r *http.Request, component templ.Component) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := component.Render(r.Context(), w); err != nil {
+		writeError(w, err, http.StatusInternalServerError)
 	}
 }
 

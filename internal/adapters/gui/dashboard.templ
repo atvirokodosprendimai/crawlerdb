@@ -152,12 +152,13 @@ templ DashboardRoot(view dashboardView) {
                             <h2 class="selected-title">{ view.Selected.Job.SeedURL }</h2>
                             <p class="selected-id">Job { view.Selected.Job.ID }</p>
                         </div>
-                        <div class="control-row">
-                            for _, control := range view.Selected.Controls {
-                                <button type="button" class={ control.Class } data-on:click={ control.Action }>{ control.Label }</button>
-                            }
-                            <a class="btn btn-secondary" href={ "/api/jobs/" + view.Selected.Job.ID + "/export?format=sitemap" } target="_blank" rel="noreferrer">Sitemap</a>
-                        </div>
+						<div class="control-row">
+							for _, control := range view.Selected.Controls {
+								<button type="button" class={ control.Class } data-on:click={ control.Action }>{ control.Label }</button>
+							}
+							<a class="btn btn-secondary" href={ view.Selected.SettingsURL }>Settings</a>
+							<a class="btn btn-secondary" href={ "/api/jobs/" + view.Selected.Job.ID + "/export?format=sitemap" } target="_blank" rel="noreferrer">Sitemap</a>
+						</div>
                     </div>
                     <div class="signal-grid">
                         for _, card := range view.Selected.SignalCards {

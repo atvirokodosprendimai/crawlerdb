@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -173,4 +174,52 @@ func TestRouter_SiteExplorerAndContent(t *testing.T) {
 	assert.Equal(t, http.StatusOK, contentW.Code)
 	assert.Contains(t, contentW.Header().Get("Content-Type"), "text/html")
 	assert.Contains(t, contentW.Body.String(), "about")
+}
+
+func TestRouter_JobSettingsPageAndUpdate(t *testing.T) {
+	router, db := setupTestRouter(t)
+	ctx := t.Context()
+
+	jobRepo := store.NewJobRepository(db)
+	job := entities.NewJob("https://example.com", valueobj.CrawlConfig{
+		Scope:          valueobj.ScopeSameDomain,
+		MaxDepth:       3,
+		Extraction:     valueobj.ExtractionStandard,
+		RateLimit:      valueobj.Duration{Duration: time.Second},
+		RevisitTTL:     valueobj.Duration{Duration: 24 * time.Hour},
+		MaxConcurrency: 1,
+		UserAgent:      "CrawlerDB/1.0",
+	})
+	require.NoError(t, jobRepo.Create(ctx, job))
+
+	getReq := httptest.NewRequest("GET", "/jobs/"+job.ID+"/settings", nil)
+	getW := httptest.NewRecorder()
+	router.ServeHTTP(getW, getReq)
+
+	assert.Equal(t, http.StatusOK, getW.Code)
+	assert.Contains(t, getW.Body.String(), "Edit Site Settings")
+	assert.Contains(t, getW.Body.String(), job.SeedURL)
+
+	body := strings.NewReader("seed_url=https%3A%2F%2Fexample.com%2Fupdated&scope=follow_externals&extraction=full&max_depth=9&external_depth=2&rate_limit=3s&revisit_ttl=48h&max_concurrency=4&antibot_mode=rotate&user_agent=TestBot%2F2.0")
+	postReq := httptest.NewRequest("POST", "/jobs/"+job.ID+"/settings", body)
+	postReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	postW := httptest.NewRecorder()
+	router.ServeHTTP(postW, postReq)
+
+	assert.Equal(t, http.StatusSeeOther, postW.Code)
+	assert.Equal(t, "/jobs/"+job.ID+"/settings?saved=1", postW.Header().Get("Location"))
+
+	updated, err := jobRepo.FindByID(ctx, job.ID)
+	require.NoError(t, err)
+	require.NotNil(t, updated)
+	assert.Equal(t, "https://example.com/updated", updated.SeedURL)
+	assert.Equal(t, valueobj.ScopeFollowExternals, updated.Config.Scope)
+	assert.Equal(t, valueobj.ExtractionFull, updated.Config.Extraction)
+	assert.Equal(t, 9, updated.Config.MaxDepth)
+	assert.Equal(t, 2, updated.Config.ExternalDepth)
+	assert.Equal(t, 3*time.Second, updated.Config.RateLimit.Duration)
+	assert.Equal(t, 48*time.Hour, updated.Config.RevisitTTL.Duration)
+	assert.Equal(t, 4, updated.Config.MaxConcurrency)
+	assert.Equal(t, valueobj.AntiBotRotate, updated.Config.AntiBotMode)
+	assert.Equal(t, "TestBot/2.0", updated.Config.UserAgent)
 }

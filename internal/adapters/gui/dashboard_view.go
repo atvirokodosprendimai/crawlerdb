@@ -63,6 +63,7 @@ type dashboardSelectedView struct {
 	Counts      map[string]int
 	Controls    []dashboardControl
 	SignalCards []dashboardSignalCard
+	SettingsURL string
 }
 
 type dashboardExceptionView struct {
@@ -440,9 +441,10 @@ func buildSelectedView(job *entities.Job, counts map[string]int) *dashboardSelec
 	)
 
 	return &dashboardSelectedView{
-		Job:      job,
-		Counts:   counts,
-		Controls: controls,
+		Job:         job,
+		Counts:      counts,
+		Controls:    controls,
+		SettingsURL: "/jobs/" + job.ID + "/settings",
 		SignalCards: []dashboardSignalCard{
 			{
 				Value: formatNumber(counts["error"] + counts["blocked"]),
