@@ -172,6 +172,26 @@ func TestURLRepository_DedupByNormalized(t *testing.T) {
 	assert.Len(t, pending, 1)
 }
 
+func TestURLRepository_EnqueueUpdatesExistingNormalizedRow(t *testing.T) {
+	jobs, urls, _ := setupDB(t)
+	ctx := context.Background()
+
+	job := newJob()
+	require.NoError(t, jobs.Create(ctx, job))
+
+	first := entities.NewCrawlURL(job.ID, "https://example.com/one", "https://example.com/", "hash1", 5, "")
+	second := entities.NewCrawlURL(job.ID, "https://example.com/two", "https://example.com/", "hash2", 2, "https://example.com/src")
+
+	require.NoError(t, urls.Enqueue(ctx, first))
+	require.NoError(t, urls.Enqueue(ctx, second))
+
+	pending, err := urls.FindPending(ctx, job.ID, 10)
+	require.NoError(t, err)
+	require.Len(t, pending, 1)
+	assert.Equal(t, 2, pending[0].Depth)
+	assert.Equal(t, "https://example.com/src", pending[0].FoundOn)
+}
+
 func TestURLRepository_FindByHash(t *testing.T) {
 	jobs, urls, _ := setupDB(t)
 	ctx := context.Background()
@@ -271,6 +291,33 @@ func TestURLRepository_RequeueTimedOutCrawling(t *testing.T) {
 	assert.Equal(t, entities.URLStatusPending, found.Status)
 	assert.Equal(t, 1, found.RetryCount)
 	assert.Contains(t, found.LastError, "crawl timeout")
+}
+
+func TestURLRepository_RequeueDueRevisits(t *testing.T) {
+	jobs, urls, _ := setupDB(t)
+	ctx := context.Background()
+
+	job := newJob()
+	require.NoError(t, jobs.Create(ctx, job))
+
+	u := entities.NewCrawlURL(job.ID, "https://example.com", "https://example.com/", "hash-revisit", 0, "")
+	require.NoError(t, urls.Enqueue(ctx, u))
+
+	claimed, err := urls.Claim(ctx, job.ID, 1)
+	require.NoError(t, err)
+	require.Len(t, claimed, 1)
+	require.NoError(t, claimed[0].MarkDone())
+	claimed[0].RevisitAt = time.Now().Add(-time.Minute)
+	require.NoError(t, urls.Complete(ctx, claimed[0]))
+
+	requeued, err := urls.RequeueDueRevisits(ctx, time.Now())
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), requeued)
+
+	pending, err := urls.FindPending(ctx, job.ID, 10)
+	require.NoError(t, err)
+	require.Len(t, pending, 1)
+	assert.True(t, pending[0].RevisitAt.IsZero())
 }
 
 func TestURLRepository_Complete_PreservesUniqueColumnsForSparseWorkerPayload(t *testing.T) {

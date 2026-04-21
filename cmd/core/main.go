@@ -352,6 +352,26 @@ func main() {
 		}
 	}()
 
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				requeued, err := urlRepo.RequeueDueRevisits(ctx, time.Now())
+				if err != nil {
+					logger.Error("requeue due revisits", "err", err)
+					continue
+				}
+				if requeued > 0 {
+					logger.Info("requeued due revisits", "count", requeued)
+				}
+			}
+		}
+	}()
+
 	<-ctx.Done()
 	logger.Info("core shutting down")
 }

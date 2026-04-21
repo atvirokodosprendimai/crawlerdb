@@ -34,6 +34,14 @@ type CrawlURL struct {
 	UpdatedAt  time.Time `json:"updated_at"`
 }
 
+func (u *CrawlURL) ScheduleRevisit(after time.Duration) {
+	if after <= 0 {
+		u.RevisitAt = time.Time{}
+		return
+	}
+	u.RevisitAt = time.Now().UTC().Add(after)
+}
+
 // NewCrawlURL creates a new URL in pending state.
 func NewCrawlURL(jobID, rawURL, normalized, urlHash string, depth int, foundOn string) *CrawlURL {
 	now := time.Now().UTC()

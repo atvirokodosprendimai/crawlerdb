@@ -167,9 +167,17 @@ func (s *CrawlService) markDispatched(domain string) {
 
 // ProcessResult handles a crawl result from a worker.
 func (s *CrawlService) ProcessResult(ctx context.Context, result *entities.CrawlResult) error {
+	job, err := s.jobRepo.FindByID(ctx, result.URL.JobID)
+	if err != nil {
+		return fmt.Errorf("find job: %w", err)
+	}
+
 	// Update URL status.
 	if result.Success {
 		result.URL.LastError = ""
+		if job != nil && job.Config.RevisitTTL.Duration > 0 {
+			result.URL.ScheduleRevisit(job.Config.RevisitTTL.Duration)
+		}
 		if err := result.URL.MarkDone(); err != nil {
 			return fmt.Errorf("mark URL done: %w", err)
 		}
@@ -198,10 +206,6 @@ func (s *CrawlService) ProcessResult(ctx context.Context, result *entities.Crawl
 
 	// Enqueue discovered URLs.
 	if len(result.DiscoveredURLs) > 0 {
-		job, err := s.jobRepo.FindByID(ctx, result.URL.JobID)
-		if err != nil {
-			return fmt.Errorf("find job: %w", err)
-		}
 		if job == nil {
 			return nil
 		}

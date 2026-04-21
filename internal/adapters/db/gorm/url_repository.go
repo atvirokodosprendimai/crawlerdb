@@ -23,7 +23,15 @@ func NewURLRepository(db *gorm.DB) *URLRepository {
 
 func (r *URLRepository) Enqueue(ctx context.Context, url *entities.CrawlURL) error {
 	m := urlToModel(url)
-	result := r.db.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(m)
+	result := r.db.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "job_id"}, {Name: "normalized"}},
+		DoUpdates: clause.Assignments(map[string]any{
+			"raw_url":  gorm.Expr("CASE WHEN raw_url = '' THEN excluded.raw_url ELSE raw_url END"),
+			"url_hash": gorm.Expr("CASE WHEN url_hash = '' THEN excluded.url_hash ELSE url_hash END"),
+			"depth":    gorm.Expr("MIN(depth, excluded.depth)"),
+			"found_on": gorm.Expr("CASE WHEN found_on = '' THEN excluded.found_on ELSE found_on END"),
+		}),
+	}).Create(m)
 	return result.Error
 }
 
@@ -35,7 +43,15 @@ func (r *URLRepository) EnqueueBatch(ctx context.Context, urls []*entities.Crawl
 	for i, u := range urls {
 		models[i] = urlToModel(u)
 	}
-	return r.db.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).CreateInBatches(models, 100).Error
+	return r.db.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "job_id"}, {Name: "normalized"}},
+		DoUpdates: clause.Assignments(map[string]any{
+			"raw_url":  gorm.Expr("CASE WHEN raw_url = '' THEN excluded.raw_url ELSE raw_url END"),
+			"url_hash": gorm.Expr("CASE WHEN url_hash = '' THEN excluded.url_hash ELSE url_hash END"),
+			"depth":    gorm.Expr("MIN(depth, excluded.depth)"),
+			"found_on": gorm.Expr("CASE WHEN found_on = '' THEN excluded.found_on ELSE found_on END"),
+		}),
+	}).CreateInBatches(models, 100).Error
 }
 
 // Claim atomically transitions up to `limit` pending URLs to crawling status.
@@ -158,6 +174,24 @@ func (r *URLRepository) RequeueTimedOutCrawling(ctx context.Context, before time
 			"retry_count": gorm.Expr("retry_count + 1"),
 			"updated_at":  now,
 			"last_error":  fmt.Sprintf("crawl timeout after %s; requeued", now.Sub(before).Round(time.Second)),
+		})
+	if result.Error != nil {
+		return 0, result.Error
+	}
+	return result.RowsAffected, nil
+}
+
+func (r *URLRepository) RequeueDueRevisits(ctx context.Context, before time.Time) (int64, error) {
+	now := time.Now().UTC()
+	result := r.db.WithContext(ctx).
+		Model(&URLModel{}).
+		Where("status = ? AND revisit_at IS NOT NULL AND revisit_at <= ?", string(entities.URLStatusDone), before).
+		Updates(map[string]any{
+			"status":      string(entities.URLStatusPending),
+			"updated_at":  now,
+			"revisit_at":  nil,
+			"last_error":  "",
+			"retry_count": 0,
 		})
 	if result.Error != nil {
 		return 0, result.Error
