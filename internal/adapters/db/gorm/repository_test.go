@@ -320,6 +320,74 @@ func TestURLRepository_RequeueDueRevisits(t *testing.T) {
 	assert.True(t, pending[0].RevisitAt.IsZero())
 }
 
+func TestURLRepository_DedupeJobURLs(t *testing.T) {
+	db, err := store.Open(":memory:")
+	require.NoError(t, err)
+	require.NoError(t, store.Migrate(db))
+	jobs := store.NewJobRepository(db)
+	urls := store.NewURLRepository(db)
+	pages := store.NewPageRepository(db, store.WithContentDir(filepath.Join(t.TempDir(), "data")))
+	ctx := context.Background()
+
+	job := newJob()
+	require.NoError(t, jobs.Create(ctx, job))
+
+	require.NoError(t, db.Exec("DROP INDEX IF EXISTS idx_urls_job_normalized").Error)
+
+	keep := entities.NewCrawlURL(job.ID, "https://example.com/a", "https://example.com/x", "hash-keep", 1, "")
+	drop := entities.NewCrawlURL(job.ID, "https://example.com/b", "https://example.com/x", "hash-drop", 3, "https://example.com/src")
+	keep.Status = entities.URLStatusDone
+	drop.Status = entities.URLStatusError
+	require.NoError(t, db.Exec(`INSERT INTO urls (id, job_id, raw_url, normalized, url_hash, depth, status, retry_count, revisit_at, found_on, created_at, updated_at, last_error) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		keep.ID, keep.JobID, keep.RawURL, keep.Normalized, keep.URLHash, keep.Depth, string(keep.Status), keep.RetryCount, nil, keep.FoundOn, keep.CreatedAt, keep.UpdatedAt, keep.LastError).Error)
+	require.NoError(t, db.Exec(`INSERT INTO urls (id, job_id, raw_url, normalized, url_hash, depth, status, retry_count, revisit_at, found_on, created_at, updated_at, last_error) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		drop.ID, drop.JobID, drop.RawURL, drop.Normalized, drop.URLHash, drop.Depth, string(drop.Status), drop.RetryCount, nil, drop.FoundOn, drop.CreatedAt, drop.UpdatedAt, drop.LastError).Error)
+
+	page1 := entities.NewPage(keep.ID, job.ID)
+	page1.HTTPStatus = 200
+	page1.ContentType = "text/html"
+	page1.RawContent = []byte("keep")
+	page1.FetchedAt = time.Now().Add(-time.Hour).UTC()
+	require.NoError(t, pages.Store(ctx, page1))
+
+	page2 := entities.NewPage(drop.ID, job.ID)
+	page2.HTTPStatus = 200
+	page2.ContentType = "text/html"
+	page2.RawContent = []byte("drop")
+	page2.FetchedAt = time.Now().UTC()
+	require.NoError(t, pages.Store(ctx, page2))
+
+	require.NoError(t, db.Exec(`INSERT INTO antibot_events (id, url_id, job_id, event_type, provider, strategy, resolved, details, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"evt-1", drop.ID, job.ID, "blocked", "cloudflare", "skip", false, "{}", time.Now().UTC()).Error)
+
+	deleted, err := urls.DedupeJobURLs(ctx, job.ID)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), deleted)
+
+	var urlCount int64
+	require.NoError(t, db.Table("urls").Where("job_id = ?", job.ID).Count(&urlCount).Error)
+	assert.Equal(t, int64(1), urlCount)
+
+	merged, err := urls.FindPending(ctx, job.ID, 10)
+	require.NoError(t, err)
+	assert.Len(t, merged, 0)
+
+	var finalURL store.URLModel
+	require.NoError(t, db.Where("job_id = ?", job.ID).First(&finalURL).Error)
+	assert.Equal(t, keep.ID, finalURL.ID)
+	assert.Equal(t, 1, finalURL.Depth)
+	assert.Equal(t, "https://example.com/src", finalURL.FoundOn)
+
+	storedPage, err := pages.FindByURLID(ctx, keep.ID)
+	require.NoError(t, err)
+	require.NotNil(t, storedPage)
+	assert.Equal(t, page2.ID, storedPage.ID)
+
+	var antibotURLID string
+	require.NoError(t, db.Table("antibot_events").Select("url_id").Where("id = ?", "evt-1").Scan(&antibotURLID).Error)
+	assert.Equal(t, keep.ID, antibotURLID)
+}
+
 func TestURLRepository_Complete_PreservesUniqueColumnsForSparseWorkerPayload(t *testing.T) {
 	jobs, urls, _ := setupDB(t)
 	ctx := context.Background()

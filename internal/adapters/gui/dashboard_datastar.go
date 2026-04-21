@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/a-h/templ"
+	store "github.com/atvirokodosprendimai/crawlerdb/internal/adapters/db/gorm"
 	"github.com/atvirokodosprendimai/crawlerdb/internal/domain/ports"
 	"github.com/atvirokodosprendimai/crawlerdb/internal/domain/valueobj"
 	"github.com/go-chi/chi/v5"
@@ -19,12 +20,14 @@ import (
 )
 
 type datastarDashboardHandlers struct {
+	db     *gorm.DB
 	loader *dashboardStateLoader
 	broker ports.MessageBroker
 }
 
 func newDatastarDashboardHandlers(db *gorm.DB, broker ports.MessageBroker, jobRepo ports.JobRepository, urlRepo ports.URLRepository) *datastarDashboardHandlers {
 	return &datastarDashboardHandlers{
+		db: db,
 		loader: &dashboardStateLoader{
 			db:      db,
 			jobRepo: jobRepo,
@@ -132,13 +135,38 @@ func (h *datastarDashboardHandlers) handleJobAction(w http.ResponseWriter, r *ht
 		writeError(w, err, http.StatusBadRequest)
 		return
 	}
+
+	jobID := chi.URLParam(r, "id")
+
+	action := chi.URLParam(r, "action")
+	if action == "dedupe" {
+		if _, err := store.NewURLRepository(h.db).DedupeJobURLs(r.Context(), jobID); err != nil {
+			writeError(w, err, http.StatusInternalServerError)
+			return
+		}
+		signals.SelectedJobID = jobID
+		signals.ExceptionsOffset = 0
+		signals.SiteOffset = 0
+
+		view, err := h.loader.load(r.Context(), &signals)
+		if err != nil {
+			writeError(w, err, http.StatusInternalServerError)
+			return
+		}
+
+		sse := datastar.NewSSE(w, r)
+		patchDashboardSignals(sse, signals)
+		if err := patchDashboardRoot(r.Context(), sse, view); err != nil {
+			writeError(w, err, http.StatusInternalServerError)
+		}
+		return
+	}
+
 	if h.broker == nil {
 		writeError(w, fmt.Errorf("message broker unavailable"), http.StatusServiceUnavailable)
 		return
 	}
 
-	jobID := chi.URLParam(r, "id")
-	action := chi.URLParam(r, "action")
 	subject, err := actionSubject(action)
 	if err != nil {
 		writeError(w, err, http.StatusBadRequest)
@@ -200,28 +228,48 @@ func (h *datastarDashboardHandlers) handleEvents(w http.ResponseWriter, r *http.
 		body    string
 	}, 64)
 
-	sub, err := h.broker.Subscribe("gui.push.>", func(subject string, data []byte) error {
-		body := string(data)
-		if json.Valid(data) {
-			var pretty bytes.Buffer
-			if err := json.Indent(&pretty, data, "", "  "); err == nil {
-				body = pretty.String()
-			}
-		}
-		select {
-		case events <- struct {
-			subject string
-			body    string
-		}{subject: subject, body: body}:
-		default:
-		}
-		return nil
-	})
-	if err != nil {
-		writeError(w, err, http.StatusInternalServerError)
-		return
+	subjects := []string{
+		"crawl.result.>",
+		"job.created",
+		"job.updated",
+		"url.discovered",
+		"url.blocked",
+		"captcha.detected",
+		"captcha.solved",
 	}
-	defer sub.Unsubscribe()
+	subs := make([]ports.Subscription, 0, len(subjects))
+	for _, subject := range subjects {
+		sub, err := h.broker.Subscribe(subject, func(subject string, data []byte) error {
+			body := string(data)
+			if json.Valid(data) {
+				var pretty bytes.Buffer
+				if err := json.Indent(&pretty, data, "", "  "); err == nil {
+					body = pretty.String()
+				}
+			}
+			select {
+			case events <- struct {
+				subject string
+				body    string
+			}{subject: subject, body: body}:
+			default:
+			}
+			return nil
+		})
+		if err != nil {
+			for _, existing := range subs {
+				_ = existing.Unsubscribe()
+			}
+			writeError(w, err, http.StatusInternalServerError)
+			return
+		}
+		subs = append(subs, sub)
+	}
+	defer func() {
+		for _, sub := range subs {
+			_ = sub.Unsubscribe()
+		}
+	}()
 
 	sse := datastar.NewSSE(w, r)
 	removedEmpty := false

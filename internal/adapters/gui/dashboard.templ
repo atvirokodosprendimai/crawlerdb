@@ -23,7 +23,7 @@ templ DashboardPage() {
                         </div>
                     </div>
                 </div>
-                <div id="dashboard-root" data-init={ refreshDashboardExpr() }>
+                <div id="dashboard-root" data-init={ refreshDashboardExpr() } data-on-interval__duration.2s={ refreshDashboardExpr() }>
                     <div class="panel section">
                         <div class="empty">Loading dashboard…</div>
                     </div>
@@ -249,7 +249,7 @@ templ DashboardRoot(view dashboardView) {
                                 <p class="section-subtitle">Raw event feed from the backend.</p>
                             </div>
                         </div>
-                        <div id="event-stream" class="stream">
+                        <div id="event-stream" class="stream" data-ignore-morph>
                             <div id="event-stream-empty" class="stream-item">
                                 <p class="quiet-note">Waiting for new events.</p>
                             </div>
