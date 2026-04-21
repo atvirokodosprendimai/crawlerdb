@@ -487,6 +487,7 @@ func TestPageRepository_StoreAndFind(t *testing.T) {
 	page.Title = "Example"
 	page.ContentType = "text/html"
 	page.RawContent = []byte("<html><body>example</body></html>")
+	page.TextContent = "example"
 	page.FetchedAt = time.Now().UTC()
 	page.FetchDuration = 150 * time.Millisecond
 	page.Headers = map[string]string{"Content-Type": "text/html"}
@@ -504,10 +505,36 @@ func TestPageRepository_StoreAndFind(t *testing.T) {
 	assert.Len(t, found.Links, 1)
 	assert.Equal(t, 150*time.Millisecond, found.FetchDuration)
 	assert.NotEmpty(t, found.ContentPath)
+	assert.Equal(t, "example", found.TextContent)
 	assert.Contains(t, filepath.ToSlash(found.ContentPath), "/example.com/")
 	assert.Equal(t, int64(len("<html><body>example</body></html>")), found.ContentSize)
 	_, err = os.Stat(filepath.Clean(found.ContentPath))
 	require.NoError(t, err)
+}
+
+func TestPageRepository_StoreAndFind_PersistsTextContent(t *testing.T) {
+	jobs, urls, pages := setupDB(t)
+	ctx := context.Background()
+
+	job := newJob()
+	require.NoError(t, jobs.Create(ctx, job))
+
+	u := entities.NewCrawlURL(job.ID, "https://example.com/file.csv", "https://example.com/file.csv", "hash-text", 0, "")
+	require.NoError(t, urls.Enqueue(ctx, u))
+
+	page := entities.NewPage(u.ID, job.ID)
+	page.HTTPStatus = 200
+	page.ContentType = "text/csv"
+	page.TextContent = "name,email John,john@example.com"
+	page.RawContent = []byte("name,email\nJohn,john@example.com\n")
+	page.FetchedAt = time.Now().UTC()
+
+	require.NoError(t, pages.Store(ctx, page))
+
+	found, err := pages.FindByURLID(ctx, u.ID)
+	require.NoError(t, err)
+	require.NotNil(t, found)
+	assert.Equal(t, "name,email John,john@example.com", found.TextContent)
 }
 
 func TestPageRepository_StoreAndFind_StagedContent(t *testing.T) {

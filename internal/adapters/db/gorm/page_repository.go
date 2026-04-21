@@ -104,7 +104,6 @@ func (r *PageRepository) persistContent(ctx context.Context, page *entities.Page
 		}
 		page.RawContent = nil
 		page.HTMLBody = ""
-		page.TextContent = ""
 		return nil
 	}
 	if len(payload) == 0 {
@@ -138,7 +137,6 @@ func (r *PageRepository) persistContent(ctx context.Context, page *entities.Page
 	page.ContentSize = int64(len(payload))
 	page.RawContent = nil
 	page.HTMLBody = ""
-	page.TextContent = ""
 	return nil
 }
 

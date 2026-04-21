@@ -66,18 +66,38 @@ func (e *Extractor) Extract(
 			page.HTMLBody = string(body)
 		}
 
-		// Full: include text content and structured data.
-		if profile.IncludesText() {
-			reader.Reset(string(body))
-			page.TextContent = fetcher.ExtractText(reader)
-		}
+		reader.Reset(string(body))
+		page.TextContent = fetcher.ExtractText(reader)
 
 		if profile.IncludesStructuredData() {
 			page.StructuredData = extractStructuredData(body)
 		}
+	} else {
+		page.TextContent = extractSearchText(resp.ContentType, body)
 	}
 
 	return page
+}
+
+func extractSearchText(contentType string, body []byte) string {
+	mediaType, _, err := mime.ParseMediaType(contentType)
+	if err != nil {
+		return ""
+	}
+	mediaType = strings.ToLower(mediaType)
+	if strings.HasPrefix(mediaType, "text/") {
+		return normalizeSearchText(string(body))
+	}
+	switch mediaType {
+	case "application/json", "application/xml", "application/javascript", "application/x-javascript", "application/csv":
+		return normalizeSearchText(string(body))
+	default:
+		return ""
+	}
+}
+
+func normalizeSearchText(value string) string {
+	return strings.Join(strings.Fields(value), " ")
 }
 
 func isHTMLContentType(contentType string) bool {

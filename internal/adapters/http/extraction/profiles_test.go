@@ -47,7 +47,7 @@ func TestExtract_Minimal(t *testing.T) {
 	assert.Equal(t, "Full description", page.MetaTags["description"])
 	assert.NotEmpty(t, page.Links)
 	assert.Empty(t, page.HTMLBody, "minimal should not include HTML body")
-	assert.Empty(t, page.TextContent, "minimal should not include text")
+	assert.Contains(t, page.TextContent, "Main Content")
 	assert.Empty(t, page.StructuredData, "minimal should not include structured data")
 }
 
@@ -60,7 +60,7 @@ func TestExtract_Standard(t *testing.T) {
 	page := ext.Extract(resp, body, "url1", "job1", "https://example.com/page", "example.com", profile, 0)
 
 	assert.NotEmpty(t, page.HTMLBody, "standard should include HTML body")
-	assert.Empty(t, page.TextContent, "standard should not include text")
+	assert.Contains(t, page.TextContent, "Main Content")
 }
 
 func TestExtract_Full(t *testing.T) {
@@ -116,4 +116,19 @@ func TestExtract_NonHTMLPreservesRawContentWithoutHTMLExtraction(t *testing.T) {
 	assert.Empty(t, page.Links)
 	assert.Empty(t, page.HTMLBody)
 	assert.Empty(t, page.TextContent)
+}
+
+func TestExtract_NonHTMLTextStoresSearchableText(t *testing.T) {
+	ext := extraction.NewExtractor()
+	resp := &ports.FetchResponse{
+		StatusCode:  200,
+		ContentType: "text/csv; charset=utf-8",
+		Headers:     http.Header{"Content-Type": {"text/csv; charset=utf-8"}},
+		URL:         "https://example.com/file.csv",
+	}
+	body := []byte("name,email\nJohn,john@example.com\n")
+
+	page := ext.Extract(resp, body, "url1", "job1", "https://example.com/file.csv", "example.com", valueobj.ExtractionProfile{Level: valueobj.ExtractionMinimal}, 0)
+
+	assert.Equal(t, "name,email John,john@example.com", page.TextContent)
 }
