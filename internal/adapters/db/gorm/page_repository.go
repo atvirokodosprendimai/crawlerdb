@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/atvirokodosprendimai/crawlerdb/internal/adapters/http/extraction"
 	"github.com/atvirokodosprendimai/crawlerdb/internal/domain/entities"
 	"golang.org/x/net/idna"
 	"gorm.io/gorm"
@@ -87,6 +88,50 @@ func (r *PageRepository) FindByJobID(ctx context.Context, jobID string, limit, o
 		pages = append(pages, p)
 	}
 	return pages, nil
+}
+
+func (r *PageRepository) BackfillTextContent(ctx context.Context, jobID string, limit int) (int, error) {
+	if limit <= 0 {
+		limit = 1000
+	}
+	query := r.db.WithContext(ctx).
+		Model(&PageModel{}).
+		Where("content_path <> '' AND (text_content = '' OR text_content IS NULL)")
+	if strings.TrimSpace(jobID) != "" {
+		query = query.Where("job_id = ?", jobID)
+	}
+
+	var pages []PageModel
+	if err := query.Order("created_at ASC").Limit(limit).Find(&pages).Error; err != nil {
+		return 0, err
+	}
+
+	updated := 0
+	for _, page := range pages {
+		path := filepath.Clean(page.ContentPath)
+		if !filepath.IsAbs(path) {
+			path = filepath.Join(".", path)
+		}
+		body, err := os.ReadFile(path)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+			return updated, err
+		}
+		text := extraction.ExtractSearchText(page.ContentType, body)
+		if text == "" {
+			continue
+		}
+		if err := r.db.WithContext(ctx).
+			Model(&PageModel{}).
+			Where("id = ?", page.ID).
+			Updates(map[string]any{"text_content": text}).Error; err != nil {
+			return updated, err
+		}
+		updated++
+	}
+	return updated, nil
 }
 
 func (r *PageRepository) persistContent(ctx context.Context, page *entities.Page) error {

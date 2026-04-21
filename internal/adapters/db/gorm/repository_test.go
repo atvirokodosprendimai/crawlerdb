@@ -537,6 +537,33 @@ func TestPageRepository_StoreAndFind_PersistsTextContent(t *testing.T) {
 	assert.Equal(t, "name,email John,john@example.com", found.TextContent)
 }
 
+func TestPageRepository_BackfillTextContent(t *testing.T) {
+	jobs, urls, pages := setupDB(t)
+	ctx := context.Background()
+
+	job := newJob()
+	require.NoError(t, jobs.Create(ctx, job))
+
+	u := entities.NewCrawlURL(job.ID, "https://example.com/file.csv", "https://example.com/file.csv", "hash-backfill", 0, "")
+	require.NoError(t, urls.Enqueue(ctx, u))
+
+	page := entities.NewPage(u.ID, job.ID)
+	page.HTTPStatus = 200
+	page.ContentType = "text/csv"
+	page.RawContent = []byte("name,email\nJohn,john@example.com\n")
+	page.FetchedAt = time.Now().UTC()
+	require.NoError(t, pages.Store(ctx, page))
+
+	updated, err := pages.BackfillTextContent(ctx, job.ID, 100)
+	require.NoError(t, err)
+	assert.Equal(t, 1, updated)
+
+	found, err := pages.FindByURLID(ctx, u.ID)
+	require.NoError(t, err)
+	require.NotNil(t, found)
+	assert.Equal(t, "name,email John,john@example.com", found.TextContent)
+}
+
 func TestPageRepository_StoreAndFind_StagedContent(t *testing.T) {
 	jobs, urls, pages := setupDB(t)
 	ctx := context.Background()

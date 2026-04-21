@@ -73,13 +73,13 @@ func (e *Extractor) Extract(
 			page.StructuredData = extractStructuredData(body)
 		}
 	} else {
-		page.TextContent = extractSearchText(resp.ContentType, body)
+		page.TextContent = ExtractSearchText(resp.ContentType, body)
 	}
 
 	return page
 }
 
-func extractSearchText(contentType string, body []byte) string {
+func ExtractSearchText(contentType string, body []byte) string {
 	mediaType, _, err := mime.ParseMediaType(contentType)
 	if err != nil {
 		return ""

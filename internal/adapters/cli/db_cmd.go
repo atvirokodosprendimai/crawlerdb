@@ -86,6 +86,28 @@ func dbCommand() *cli.Command {
 					return nil
 				},
 			},
+			{
+				Name:  "backfill-text",
+				Usage: "Parse existing stored files and fill pages.text_content",
+				Flags: []cli.Flag{
+					&cli.StringFlag{Name: "job", Usage: "Optional job ID filter"},
+					&cli.IntFlag{Name: "limit", Usage: "Max pages per run", Value: 1000},
+				},
+				Action: func(ctx context.Context, cmd *cli.Command) error {
+					dbPath := cmd.Root().String("db-path")
+					db, err := store.Open(dbPath)
+					if err != nil {
+						return fmt.Errorf("open database: %w", err)
+					}
+					pageRepo := store.NewPageRepository(db)
+					updated, err := pageRepo.BackfillTextContent(ctx, cmd.String("job"), cmd.Int("limit"))
+					if err != nil {
+						return fmt.Errorf("backfill text content: %w", err)
+					}
+					fmt.Fprintf(os.Stdout, "Backfilled text_content for %d pages\n", updated)
+					return nil
+				},
+			},
 		},
 	}
 }
