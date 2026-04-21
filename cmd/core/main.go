@@ -12,9 +12,11 @@ import (
 
 	"github.com/atvirokodosprendimai/crawlerdb/internal/adapters/config"
 	store "github.com/atvirokodosprendimai/crawlerdb/internal/adapters/db/gorm"
+	"github.com/atvirokodosprendimai/crawlerdb/internal/adapters/export"
 	broker "github.com/atvirokodosprendimai/crawlerdb/internal/adapters/nats"
 	"github.com/atvirokodosprendimai/crawlerdb/internal/app/services"
 	"github.com/atvirokodosprendimai/crawlerdb/internal/domain/entities"
+	"github.com/atvirokodosprendimai/crawlerdb/internal/domain/ports"
 	"github.com/atvirokodosprendimai/crawlerdb/internal/domain/valueobj"
 	"github.com/nats-io/nats.go"
 )
@@ -66,6 +68,11 @@ func main() {
 	// Create services.
 	jobSvc := services.NewJobService(jobRepo, urlRepo, mb)
 	crawlSvc := services.NewCrawlService(jobRepo, urlRepo, pageRepo, mb)
+	exportSvc := services.NewExportService(
+		export.NewJSONExporter(pageRepo),
+		export.NewCSVExporter(pageRepo, urlRepo),
+		export.NewSitemapExporter(urlRepo),
+	)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
@@ -148,6 +155,39 @@ func main() {
 		}
 		reply, _ := json.Marshal(jobs)
 		_ = msg.Respond(reply)
+	})
+
+	// Handle export requests.
+	_, _ = nc.Subscribe("job.export", func(msg *nats.Msg) {
+		var req struct {
+			JobID  string `json:"job_id"`
+			Format string `json:"format"`
+			Output string `json:"output"`
+		}
+		if err := json.Unmarshal(msg.Data, &req); err != nil {
+			reply, _ := json.Marshal(map[string]string{"error": err.Error()})
+			_ = msg.Respond(reply)
+			return
+		}
+
+		f, err := os.Create(req.Output)
+		if err != nil {
+			reply, _ := json.Marshal(map[string]string{"error": fmt.Sprintf("create output file: %v", err)})
+			_ = msg.Respond(reply)
+			return
+		}
+		defer f.Close()
+
+		err = exportSvc.Export(ctx, ports.ExportFormat(req.Format), ports.ExportFilter{JobID: req.JobID}, f)
+		if err != nil {
+			reply, _ := json.Marshal(map[string]string{"error": err.Error()})
+			_ = msg.Respond(reply)
+			return
+		}
+
+		reply, _ := json.Marshal(map[string]string{"status": "exported", "path": req.Output})
+		_ = msg.Respond(reply)
+		logger.Info("data exported", "job", req.JobID, "format", req.Format, "path", req.Output)
 	})
 
 	// Handle crawl results from workers.

@@ -113,6 +113,22 @@ func (r *URLRepository) FindPending(ctx context.Context, jobID string, limit int
 	return result, nil
 }
 
+func (r *URLRepository) FindByJobID(ctx context.Context, jobID string, limit, offset int) ([]*entities.CrawlURL, error) {
+	var models []URLModel
+	if err := r.db.WithContext(ctx).
+		Where("job_id = ?", jobID).
+		Order("depth ASC, created_at ASC").
+		Limit(limit).Offset(offset).
+		Find(&models).Error; err != nil {
+		return nil, err
+	}
+	result := make([]*entities.CrawlURL, len(models))
+	for i, m := range models {
+		result[i] = modelToURL(&m)
+	}
+	return result, nil
+}
+
 func (r *URLRepository) CountByStatus(ctx context.Context, jobID string) (map[entities.URLStatus]int, error) {
 	type statusCount struct {
 		Status string
