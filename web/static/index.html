@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CrawlerDB Dashboard</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f172a; color: #e2e8f0; }
+        .header { background: #1e293b; padding: 1rem 2rem; border-bottom: 1px solid #334155; display: flex; justify-content: space-between; align-items: center; }
+        .header h1 { font-size: 1.5rem; color: #38bdf8; }
+        .status { font-size: 0.875rem; padding: 0.25rem 0.75rem; border-radius: 9999px; }
+        .status.connected { background: #065f46; color: #6ee7b7; }
+        .status.disconnected { background: #7f1d1d; color: #fca5a5; }
+        .container { max-width: 1200px; margin: 2rem auto; padding: 0 1rem; }
+        .card { background: #1e293b; border-radius: 0.5rem; padding: 1.5rem; margin-bottom: 1rem; border: 1px solid #334155; }
+        .card h2 { font-size: 1.125rem; margin-bottom: 1rem; color: #94a3b8; }
+        .btn { padding: 0.5rem 1rem; border: none; border-radius: 0.375rem; cursor: pointer; font-size: 0.875rem; font-weight: 500; }
+        .btn-primary { background: #3b82f6; color: white; }
+        .btn-primary:hover { background: #2563eb; }
+        .btn-danger { background: #ef4444; color: white; }
+        .btn-danger:hover { background: #dc2626; }
+        .btn-warning { background: #f59e0b; color: white; }
+        .btn-warning:hover { background: #d97706; }
+        .btn-success { background: #10b981; color: white; }
+        .btn-success:hover { background: #059669; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { text-align: left; padding: 0.75rem; border-bottom: 1px solid #334155; }
+        th { color: #94a3b8; font-weight: 600; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; }
+        td { font-size: 0.875rem; }
+        .badge { display: inline-block; padding: 0.125rem 0.5rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 600; }
+        .badge-pending { background: #1e3a5f; color: #93c5fd; }
+        .badge-running { background: #065f46; color: #6ee7b7; }
+        .badge-completed { background: #1e293b; color: #94a3b8; }
+        .badge-failed { background: #7f1d1d; color: #fca5a5; }
+        .badge-paused { background: #78350f; color: #fcd34d; }
+        .badge-stopped { background: #374151; color: #9ca3af; }
+        .form-group { margin-bottom: 1rem; }
+        .form-group label { display: block; margin-bottom: 0.25rem; font-size: 0.875rem; color: #94a3b8; }
+        .form-group input, .form-group select { width: 100%; padding: 0.5rem; background: #0f172a; border: 1px solid #334155; border-radius: 0.375rem; color: #e2e8f0; font-size: 0.875rem; }
+        .form-row { display: flex; gap: 1rem; }
+        .form-row .form-group { flex: 1; }
+        .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem; }
+        .stat { text-align: center; }
+        .stat .number { font-size: 2rem; font-weight: 700; color: #38bdf8; }
+        .stat .label { font-size: 0.75rem; color: #94a3b8; text-transform: uppercase; }
+        .events { max-height: 300px; overflow-y: auto; font-family: monospace; font-size: 0.8rem; }
+        .event { padding: 0.25rem 0; border-bottom: 1px solid #1e293b; color: #64748b; }
+        .actions { display: flex; gap: 0.5rem; }
+        #job-detail { display: none; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>CrawlerDB</h1>
+        <span id="sse-status" class="status disconnected">Disconnected</span>
+    </div>
+
+    <div class="container">
+        <!-- New Job Form -->
+        <div class="card">
+            <h2>New Crawl Job</h2>
+            <form id="new-job-form">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="seed-url">Seed URL</label>
+                        <input type="url" id="seed-url" placeholder="https://example.com" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="scope">Scope</label>
+                        <select id="scope">
+                            <option value="same_domain">Same Domain</option>
+                            <option value="include_subdomains">Include Subdomains</option>
+                            <option value="follow_externals">Follow Externals</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="max-depth">Max Depth</label>
+                        <input type="number" id="max-depth" value="3" min="1" max="20">
+                    </div>
+                </div>
+                <button type="submit" class="btn btn-primary">Start Crawl</button>
+            </form>
+        </div>
+
+        <!-- Jobs List -->
+        <div class="card">
+            <h2>Jobs</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Seed URL</th>
+                        <th>Status</th>
+                        <th>Created</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="jobs-table"></tbody>
+            </table>
+        </div>
+
+        <!-- Job Detail -->
+        <div id="job-detail" class="card">
+            <h2>Job: <span id="detail-job-id"></span></h2>
+            <div class="stats" id="job-stats"></div>
+            <div style="margin-top: 1rem;">
+                <h2>Pages</h2>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Title</th>
+                            <th>HTTP</th>
+                            <th>Links</th>
+                            <th>Fetched</th>
+                        </tr>
+                    </thead>
+                    <tbody id="pages-table"></tbody>
+                </table>
+            </div>
+            <div style="margin-top: 1rem;" class="actions">
+                <button class="btn btn-primary" onclick="exportJob('json')">Export JSON</button>
+                <button class="btn btn-primary" onclick="exportJob('csv')">Export CSV</button>
+                <button class="btn btn-primary" onclick="exportJob('sitemap')">Export Sitemap</button>
+            </div>
+        </div>
+
+        <!-- Events Log -->
+        <div class="card">
+            <h2>Live Events</h2>
+            <div class="events" id="events-log"></div>
+        </div>
+    </div>
+
+    <script>
+        const API = '/api';
+        let currentJobID = null;
+
+        // SSE Connection
+        function connectSSE() {
+            const es = new EventSource(`${API}/events`);
+            const statusEl = document.getElementById('sse-status');
+
+            es.onopen = () => {
+                statusEl.textContent = 'Connected';
+                statusEl.className = 'status connected';
+            };
+
+            es.onerror = () => {
+                statusEl.textContent = 'Disconnected';
+                statusEl.className = 'status disconnected';
+            };
+
+            es.onmessage = (e) => {
+                const data = JSON.parse(e.data);
+                addEvent(data);
+                refreshJobs();
+                if (currentJobID) loadJobDetail(currentJobID);
+            };
+        }
+
+        function addEvent(data) {
+            const log = document.getElementById('events-log');
+            const el = document.createElement('div');
+            el.className = 'event';
+            el.textContent = `[${new Date().toLocaleTimeString()}] ${data.type}: ${JSON.stringify(data.payload)}`;
+            log.prepend(el);
+            while (log.children.length > 100) log.removeChild(log.lastChild);
+        }
+
+        // API calls
+        async function refreshJobs() {
+            const resp = await fetch(`${API}/jobs`);
+            const jobs = await resp.json();
+            const tbody = document.getElementById('jobs-table');
+            tbody.innerHTML = '';
+
+            if (!jobs || jobs.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#64748b;">No jobs yet</td></tr>';
+                return;
+            }
+
+            for (const job of jobs) {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td><a href="#" onclick="loadJobDetail('${job.id}')" style="color:#38bdf8;">${job.id.substring(0, 12)}...</a></td>
+                    <td>${job.seed_url}</td>
+                    <td><span class="badge badge-${job.status}">${job.status}</span></td>
+                    <td>${new Date(job.created_at).toLocaleString()}</td>
+                    <td class="actions">
+                        ${job.status === 'running' ? `
+                            <button class="btn btn-warning" onclick="jobAction('${job.id}','pause')">Pause</button>
+                            <button class="btn btn-danger" onclick="jobAction('${job.id}','stop')">Stop</button>
+                        ` : ''}
+                        ${job.status === 'paused' ? `
+                            <button class="btn btn-success" onclick="jobAction('${job.id}','resume')">Resume</button>
+                            <button class="btn btn-danger" onclick="jobAction('${job.id}','stop')">Stop</button>
+                        ` : ''}
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            }
+        }
+
+        async function loadJobDetail(id) {
+            currentJobID = id;
+            document.getElementById('job-detail').style.display = 'block';
+            document.getElementById('detail-job-id').textContent = id.substring(0, 12) + '...';
+
+            // Load URL stats
+            const urlResp = await fetch(`${API}/jobs/${id}/urls`);
+            const urlStats = await urlResp.json();
+            const statsEl = document.getElementById('job-stats');
+            statsEl.innerHTML = '';
+            for (const [status, count] of Object.entries(urlStats || {})) {
+                statsEl.innerHTML += `<div class="stat"><div class="number">${count}</div><div class="label">${status}</div></div>`;
+            }
+
+            // Load pages
+            const pageResp = await fetch(`${API}/jobs/${id}/pages`);
+            const pages = await pageResp.json();
+            const tbody = document.getElementById('pages-table');
+            tbody.innerHTML = '';
+            for (const p of (pages || [])) {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${p.title || '(no title)'}</td>
+                    <td>${p.http_status}</td>
+                    <td>${(p.links || []).length}</td>
+                    <td>${p.fetched_at ? new Date(p.fetched_at).toLocaleString() : '-'}</td>
+                `;
+                tbody.appendChild(tr);
+            }
+        }
+
+        async function jobAction(id, action) {
+            await fetch(`${API}/jobs/${id}/${action}`, { method: 'POST' });
+            refreshJobs();
+            if (currentJobID === id) loadJobDetail(id);
+        }
+
+        function exportJob(format) {
+            if (!currentJobID) return;
+            window.open(`${API}/jobs/${currentJobID}/export?format=${format}`, '_blank');
+        }
+
+        // New job form
+        document.getElementById('new-job-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const body = {
+                seed_url: document.getElementById('seed-url').value,
+                config: {
+                    scope: document.getElementById('scope').value,
+                    max_depth: parseInt(document.getElementById('max-depth').value),
+                    extraction: 'standard',
+                    user_agent: 'CrawlerDB/1.0'
+                }
+            };
+            await fetch(`${API}/jobs`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+            document.getElementById('seed-url').value = '';
+            refreshJobs();
+        });
+
+        // Init
+        connectSSE();
+        refreshJobs();
+        setInterval(refreshJobs, 5000);
+    </script>
+</body>
+</html>
