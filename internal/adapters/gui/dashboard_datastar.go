@@ -132,13 +132,34 @@ func (h *datastarDashboardHandlers) handleCreateJob(w http.ResponseWriter, r *ht
 func (h *datastarDashboardHandlers) handleJobAction(w http.ResponseWriter, r *http.Request) {
 	signals, err := readDashboardSignals(r)
 	if err != nil {
-		writeError(w, err, http.StatusBadRequest)
-		return
+		signals = defaultDashboardSignals()
 	}
 
 	jobID := chi.URLParam(r, "id")
 
 	action := chi.URLParam(r, "action")
+	if action == "delete" {
+		if err := store.NewJobRepository(h.db).DeleteCascade(r.Context(), jobID); err != nil {
+			writeError(w, err, http.StatusInternalServerError)
+			return
+		}
+		signals.SelectedJobID = ""
+		signals.ExceptionsOffset = 0
+		signals.SiteOffset = 0
+
+		view, err := h.loader.load(r.Context(), &signals)
+		if err != nil {
+			writeError(w, err, http.StatusInternalServerError)
+			return
+		}
+
+		sse := datastar.NewSSE(w, r)
+		patchDashboardSignals(sse, signals)
+		if err := patchDashboardRoot(r.Context(), sse, view); err != nil {
+			writeError(w, err, http.StatusInternalServerError)
+		}
+		return
+	}
 	if action == "dedupe" {
 		if _, err := store.NewURLRepository(h.db).DedupeJobURLs(r.Context(), jobID); err != nil {
 			writeError(w, err, http.StatusInternalServerError)

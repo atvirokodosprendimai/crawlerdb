@@ -438,6 +438,7 @@ func buildSelectedView(job *entities.Job, counts map[string]int) *dashboardSelec
 	}
 	controls = append(controls,
 		dashboardControl{Label: "Dedupe URLs", Class: "btn btn-secondary", Action: jobActionExpr(job.ID, "dedupe")},
+		dashboardControl{Label: "Delete Site", Class: "btn btn-danger", Action: jobActionExpr(job.ID, "delete")},
 	)
 
 	return &dashboardSelectedView{

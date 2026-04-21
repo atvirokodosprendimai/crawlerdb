@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/atvirokodosprendimai/crawlerdb/internal/domain/entities"
 	"gorm.io/gorm"
@@ -17,6 +20,51 @@ type JobRepository struct {
 // NewJobRepository creates a new JobRepository.
 func NewJobRepository(db *gorm.DB) *JobRepository {
 	return &JobRepository{db: db}
+}
+
+func (r *JobRepository) DeleteCascade(ctx context.Context, jobID string) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var pages []PageModel
+		if err := tx.Where("job_id = ?", jobID).Find(&pages).Error; err != nil {
+			return err
+		}
+
+		seenPaths := make(map[string]struct{}, len(pages))
+		for _, page := range pages {
+			path := strings.TrimSpace(page.ContentPath)
+			if path == "" {
+				continue
+			}
+			clean := filepath.Clean(path)
+			if !filepath.IsAbs(clean) {
+				clean = filepath.Join(".", clean)
+			}
+			if _, exists := seenPaths[clean]; exists {
+				continue
+			}
+			seenPaths[clean] = struct{}{}
+			if err := os.Remove(clean); err != nil && !errors.Is(err, os.ErrNotExist) {
+				return err
+			}
+		}
+
+		if err := tx.Where("job_id = ?", jobID).Delete(&DomainAssignmentModel{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("job_id = ?", jobID).Delete(&AntiBotEventModel{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("job_id = ?", jobID).Delete(&PageModel{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("job_id = ?", jobID).Delete(&URLModel{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("id = ?", jobID).Delete(&JobModel{}).Error; err != nil {
+			return err
+		}
+		return nil
+	})
 }
 
 func (r *JobRepository) Create(ctx context.Context, job *entities.Job) error {

@@ -223,3 +223,64 @@ func TestRouter_JobSettingsPageAndUpdate(t *testing.T) {
 	assert.Equal(t, valueobj.AntiBotRotate, updated.Config.AntiBotMode)
 	assert.Equal(t, "TestBot/2.0", updated.Config.UserAgent)
 }
+
+func TestRouter_DeleteSiteRemovesJobDataAndFiles(t *testing.T) {
+	router, db := setupTestRouter(t)
+	ctx := t.Context()
+
+	jobRepo := store.NewJobRepository(db)
+	urlRepo := store.NewURLRepository(db)
+	pageRepo := store.NewPageRepository(db, store.WithContentDir(filepath.Join(t.TempDir(), "data")))
+
+	job := entities.NewJob("https://example.com", valueobj.CrawlConfig{
+		Scope:      valueobj.ScopeSameDomain,
+		MaxDepth:   3,
+		Extraction: valueobj.ExtractionStandard,
+	})
+	require.NoError(t, jobRepo.Create(ctx, job))
+
+	url := entities.NewCrawlURL(job.ID, "https://example.com/about", "https://example.com/about", "hash-delete", 1, "")
+	require.NoError(t, urlRepo.Enqueue(ctx, url))
+	require.NoError(t, url.Claim())
+	require.NoError(t, url.MarkDone())
+	require.NoError(t, urlRepo.Complete(ctx, url))
+
+	page := entities.NewPage(url.ID, job.ID)
+	page.ContentType = "text/html"
+	page.RawContent = []byte("delete me")
+	page.FetchedAt = time.Now().UTC()
+	require.NoError(t, pageRepo.Store(ctx, page))
+
+	storedPage, err := pageRepo.FindByURLID(ctx, url.ID)
+	require.NoError(t, err)
+	require.NotNil(t, storedPage)
+	_, err = os.Stat(storedPage.ContentPath)
+	require.NoError(t, err)
+
+	deleteReq := httptest.NewRequest("POST", "/api/gui/jobs/"+job.ID+"/delete", strings.NewReader(""))
+	deleteReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	deleteW := httptest.NewRecorder()
+	router.ServeHTTP(deleteW, deleteReq)
+
+	assert.Equal(t, http.StatusOK, deleteW.Code)
+
+	foundJob, err := jobRepo.FindByID(ctx, job.ID)
+	require.NoError(t, err)
+	assert.Nil(t, foundJob)
+
+	pages, err := pageRepo.FindByJobID(ctx, job.ID, 10, 0)
+	require.NoError(t, err)
+	assert.Len(t, pages, 0)
+
+	urls, err := urlRepo.FindByJobID(ctx, job.ID, 10, 0)
+	require.NoError(t, err)
+	assert.Len(t, urls, 0)
+
+	_, err = os.Stat(storedPage.ContentPath)
+	assert.Error(t, err)
+	assert.True(t, os.IsNotExist(err))
+
+	var antibotCount int64
+	require.NoError(t, db.Table("antibot_events").Where("job_id = ?", job.ID).Count(&antibotCount).Error)
+	assert.Equal(t, int64(0), antibotCount)
+}
