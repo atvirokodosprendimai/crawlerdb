@@ -5,9 +5,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"mime"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
+	store "github.com/atvirokodosprendimai/crawlerdb/internal/adapters/db/gorm"
 	"github.com/atvirokodosprendimai/crawlerdb/internal/adapters/http/extraction"
 	broker "github.com/atvirokodosprendimai/crawlerdb/internal/adapters/nats"
 	"github.com/atvirokodosprendimai/crawlerdb/internal/domain/entities"
@@ -23,6 +28,7 @@ type WorkerService struct {
 	detector    ports.AntiBotDetector
 	msgBroker   ports.MessageBroker
 	extractor   *extraction.Extractor
+	contentDir  string
 	poolSize    int
 	logger      *slog.Logger
 }
@@ -34,6 +40,7 @@ func NewWorkerService(
 	rl ports.RateLimiter,
 	detector ports.AntiBotDetector,
 	mb ports.MessageBroker,
+	contentDir string,
 	poolSize int,
 	logger *slog.Logger,
 ) *WorkerService {
@@ -47,6 +54,7 @@ func NewWorkerService(
 		detector:    detector,
 		msgBroker:   mb,
 		extractor:   extraction.NewExtractor(),
+		contentDir:  contentDir,
 		poolSize:    poolSize,
 		logger:      logger,
 	}
@@ -159,6 +167,12 @@ func (w *WorkerService) ProcessTask(ctx context.Context, task CrawlTask) *entiti
 	// Extract content.
 	profile := valueobj.ExtractionProfile{Level: task.Config.Extraction}
 	page := w.extractor.Extract(resp, body, task.URLID, task.JobID, task.URL, task.SeedHost, profile, fetchDuration)
+	if shouldStageContent(page) {
+		if err := w.stageContent(task.URL, page); err != nil {
+			result.Error = fmt.Sprintf("stage content: %v", err)
+			return result
+		}
+	}
 	w.logger.Debug("extraction complete",
 		"url", task.URL,
 		"title", page.Title,
@@ -176,6 +190,42 @@ func (w *WorkerService) ProcessTask(ctx context.Context, task CrawlTask) *entiti
 	)
 
 	return result
+}
+
+func shouldStageContent(page *entities.Page) bool {
+	if page == nil || len(page.RawContent) == 0 || page.ContentPath != "" {
+		return false
+	}
+	mediaType, _, err := mime.ParseMediaType(page.ContentType)
+	if err != nil {
+		return false
+	}
+	mediaType = filepath.Clean(mediaType)
+	return mediaType != "text/html" && mediaType != "application/xhtml+xml"
+}
+
+func (w *WorkerService) stageContent(url string, page *entities.Page) error {
+	if strings.TrimSpace(w.contentDir) == "" {
+		return nil
+	}
+	path, err := store.BuildContentPath(w.contentDir, url, page.ContentType)
+	if err != nil {
+		return err
+	}
+	absPath := path
+	if !filepath.IsAbs(absPath) {
+		absPath = filepath.Join(".", absPath)
+	}
+	if err := os.MkdirAll(filepath.Dir(absPath), 0o755); err != nil {
+		return err
+	}
+	if err := os.WriteFile(absPath, page.RawContent, 0o644); err != nil {
+		return err
+	}
+	page.ContentPath = filepath.ToSlash(path)
+	page.ContentSize = int64(len(page.RawContent))
+	page.RawContent = nil
+	return nil
 }
 
 // Run starts the worker pool, subscribing to NATS for crawl tasks.

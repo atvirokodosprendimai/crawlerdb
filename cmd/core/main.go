@@ -329,7 +329,10 @@ func main() {
 	}()
 
 	go func() {
-		crawlTimeout := time.Minute
+		crawlTimeout := cfg.Crawler.CrawlStuckTimeout.Duration
+		if crawlTimeout <= 0 {
+			crawlTimeout = 10 * time.Minute
+		}
 		ticker := time.NewTicker(15 * time.Second)
 		defer ticker.Stop()
 		for {

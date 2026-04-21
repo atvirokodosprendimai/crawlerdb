@@ -34,6 +34,7 @@ type CrawlerDefaults struct {
 	RobotsTTL         Duration `toml:"robots_ttl"`
 	HeartbeatInterval Duration `toml:"heartbeat_interval"`
 	HeartbeatTTL      Duration `toml:"heartbeat_ttl"`
+	CrawlStuckTimeout Duration `toml:"crawl_stuck_timeout"`
 	DomainConcurrency int      `toml:"domain_concurrency"`
 	DataDir           string   `toml:"data_dir"`
 	ContentDir        string   `toml:"content_dir"`
@@ -66,6 +67,7 @@ func DefaultAppConfig() AppConfig {
 			RobotsTTL:         Duration{24 * time.Hour},
 			HeartbeatInterval: Duration{5 * time.Second},
 			HeartbeatTTL:      Duration{15 * time.Second},
+			CrawlStuckTimeout: Duration{10 * time.Minute},
 			DomainConcurrency: 2,
 			DataDir:           ".crawlerdb",
 			ContentDir:        "data",

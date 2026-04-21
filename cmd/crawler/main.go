@@ -106,7 +106,7 @@ func main() {
 	detector := antibot.NewDetector()
 	ext := extraction.NewExtractor()
 
-	workerSvc := services.NewWorkerService(httpFetcher, robotsChecker, rateLimiter, detector, mb, cfg.Crawler.PoolSize, logger)
+	workerSvc := services.NewWorkerService(httpFetcher, robotsChecker, rateLimiter, detector, mb, cfg.Crawler.ContentDir, cfg.Crawler.PoolSize, logger)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()

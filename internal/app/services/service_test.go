@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -335,7 +336,7 @@ func TestWorkerService_ProcessTask(t *testing.T) {
 	checker := robots.NewChecker(mockHTTPFetcher, "TestBot", time.Hour)
 	rl := fetcher.NewAdaptiveRateLimiter(10 * time.Millisecond)
 
-	worker := services.NewWorkerService(mockHTTPFetcher, checker, rl, nil, b, 2, nil)
+	worker := services.NewWorkerService(mockHTTPFetcher, checker, rl, nil, b, t.TempDir(), 2, nil)
 
 	task := services.CrawlTask{
 		JobID:    "job1",
@@ -351,6 +352,42 @@ func TestWorkerService_ProcessTask(t *testing.T) {
 	assert.NotNil(t, result.Page)
 	assert.Equal(t, "Test", result.Page.Title)
 	assert.Equal(t, 200, result.Page.HTTPStatus)
+}
+
+func TestWorkerService_ProcessTask_StagesBinaryContent(t *testing.T) {
+	b := setupTestNATS(t)
+	mockHTTPFetcher := &mockFetcher{
+		responses: map[string]*ports.FetchResponse{
+			"https://example.com/video.mp4": {
+				StatusCode:  200,
+				ContentType: "video/mp4",
+				Headers:     http.Header{"Content-Type": {"video/mp4"}},
+				Body:        io.NopCloser(strings.NewReader("binary-video-data")),
+				URL:         "https://example.com/video.mp4",
+			},
+		},
+	}
+
+	checker := robots.NewChecker(mockHTTPFetcher, "TestBot", time.Hour)
+	rl := fetcher.NewAdaptiveRateLimiter(10 * time.Millisecond)
+	worker := services.NewWorkerService(mockHTTPFetcher, checker, rl, nil, b, t.TempDir(), 2, nil)
+
+	result := worker.ProcessTask(context.Background(), services.CrawlTask{
+		JobID:    "job1",
+		URLID:    "url1",
+		URL:      "https://example.com/video.mp4",
+		Depth:    0,
+		Config:   testConfig(),
+		SeedHost: "example.com",
+	})
+
+	require.True(t, result.Success)
+	require.NotNil(t, result.Page)
+	assert.NotEmpty(t, result.Page.ContentPath)
+	assert.Equal(t, int64(len("binary-video-data")), result.Page.ContentSize)
+	assert.Nil(t, result.Page.RawContent)
+	_, err := os.Stat(result.Page.ContentPath)
+	require.NoError(t, err)
 }
 
 // mockFetcher for worker tests.

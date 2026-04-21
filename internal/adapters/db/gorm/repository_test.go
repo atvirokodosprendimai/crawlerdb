@@ -395,6 +395,35 @@ func TestPageRepository_StoreAndFind(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestPageRepository_StoreAndFind_StagedContent(t *testing.T) {
+	jobs, urls, pages := setupDB(t)
+	ctx := context.Background()
+
+	job := newJob()
+	require.NoError(t, jobs.Create(ctx, job))
+
+	u := entities.NewCrawlURL(job.ID, "https://example.com/video.mp4", "https://example.com/video.mp4", "hash-binary", 0, "")
+	require.NoError(t, urls.Enqueue(ctx, u))
+
+	stagedFile := filepath.Join(t.TempDir(), "video.mp4")
+	require.NoError(t, os.WriteFile(stagedFile, []byte("mp4-data"), 0o644))
+
+	page := entities.NewPage(u.ID, job.ID)
+	page.HTTPStatus = 200
+	page.ContentType = "video/mp4"
+	page.ContentPath = stagedFile
+	page.ContentSize = int64(len("mp4-data"))
+	page.FetchedAt = time.Now().UTC()
+
+	require.NoError(t, pages.Store(ctx, page))
+
+	found, err := pages.FindByURLID(ctx, u.ID)
+	require.NoError(t, err)
+	require.NotNil(t, found)
+	assert.Equal(t, stagedFile, found.ContentPath)
+	assert.Equal(t, int64(len("mp4-data")), found.ContentSize)
+}
+
 func TestPageRepository_FindByJobID(t *testing.T) {
 	jobs, urls, pages := setupDB(t)
 	ctx := context.Background()

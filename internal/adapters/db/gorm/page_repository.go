@@ -94,6 +94,19 @@ func (r *PageRepository) persistContent(ctx context.Context, page *entities.Page
 	if len(payload) == 0 && page.HTMLBody != "" {
 		payload = []byte(page.HTMLBody)
 	}
+	if len(payload) == 0 && page.ContentPath != "" {
+		info, err := os.Stat(filepath.Clean(page.ContentPath))
+		if err != nil {
+			return fmt.Errorf("verify staged content file: %w", err)
+		}
+		if page.ContentSize == 0 {
+			page.ContentSize = info.Size()
+		}
+		page.RawContent = nil
+		page.HTMLBody = ""
+		page.TextContent = ""
+		return nil
+	}
 	if len(payload) == 0 {
 		page.ContentPath = ""
 		page.ContentSize = 0
@@ -129,6 +142,11 @@ func (r *PageRepository) persistContent(ctx context.Context, page *entities.Page
 	return nil
 }
 
+// BuildContentPath builds deterministic storage path for crawled content.
+func BuildContentPath(rootDir, normalizedURL, contentType string) (string, error) {
+	return buildContentPath(rootDir, normalizedURL, contentType)
+}
+
 func buildContentPath(rootDir, normalizedURL, contentType string) (string, error) {
 	sum := fmt.Sprintf("%x", md5.Sum([]byte(normalizedURL)))
 	if len(sum) < 5 {
@@ -156,7 +174,7 @@ func buildContentPath(rootDir, normalizedURL, contentType string) (string, error
 
 // BuildContentPathForTest exposes the storage path builder to external package tests.
 func BuildContentPathForTest(rootDir, normalizedURL, contentType string) (string, error) {
-	path, err := buildContentPath(rootDir, normalizedURL, contentType)
+	path, err := BuildContentPath(rootDir, normalizedURL, contentType)
 	if err != nil {
 		return "", err
 	}
