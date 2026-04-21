@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/csv"
 	"encoding/json"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -32,7 +33,7 @@ func seedData(t *testing.T, db *gorm.DB) *entities.Job {
 	ctx := context.Background()
 	jobRepo := store.NewJobRepository(db)
 	urlRepo := store.NewURLRepository(db)
-	pageRepo := store.NewPageRepository(db)
+	pageRepo := store.NewPageRepository(db, store.WithContentDir(filepath.Join(t.TempDir(), "data")))
 
 	job := entities.NewJob("https://example.com", valueobj.CrawlConfig{
 		Scope:      valueobj.ScopeSameDomain,
@@ -57,12 +58,16 @@ func seedData(t *testing.T, db *gorm.DB) *entities.Job {
 	page1 := entities.NewPage(url1.ID, job.ID)
 	page1.HTTPStatus = 200
 	page1.Title = "Home"
+	page1.ContentType = "text/html"
+	page1.RawContent = []byte("<html><body>home</body></html>")
 	page1.FetchedAt = time.Now().UTC()
 	require.NoError(t, pageRepo.Store(ctx, page1))
 
 	page2 := entities.NewPage(url2.ID, job.ID)
 	page2.HTTPStatus = 200
 	page2.Title = "About"
+	page2.ContentType = "text/html"
+	page2.RawContent = []byte("<html><body>about</body></html>")
 	page2.FetchedAt = time.Now().UTC()
 	require.NoError(t, pageRepo.Store(ctx, page2))
 
@@ -73,7 +78,7 @@ func TestJSONExporter(t *testing.T) {
 	db := setupDB(t)
 	job := seedData(t, db)
 
-	pageRepo := store.NewPageRepository(db)
+	pageRepo := store.NewPageRepository(db, store.WithContentDir(filepath.Join(t.TempDir(), "data")))
 	exp := export.NewJSONExporter(pageRepo)
 	assert.Equal(t, ports.ExportJSON, exp.Format())
 
@@ -90,7 +95,7 @@ func TestCSVExporter(t *testing.T) {
 	db := setupDB(t)
 	job := seedData(t, db)
 
-	pageRepo := store.NewPageRepository(db)
+	pageRepo := store.NewPageRepository(db, store.WithContentDir(filepath.Join(t.TempDir(), "data")))
 	urlRepo := store.NewURLRepository(db)
 	exp := export.NewCSVExporter(pageRepo, urlRepo)
 	assert.Equal(t, ports.ExportCSV, exp.Format())

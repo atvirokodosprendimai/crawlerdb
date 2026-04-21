@@ -2,6 +2,8 @@ package store_test
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -17,7 +19,7 @@ func setupDB(t *testing.T) (*store.JobRepository, *store.URLRepository, *store.P
 	db, err := store.Open(":memory:")
 	require.NoError(t, err)
 	require.NoError(t, store.Migrate(db))
-	return store.NewJobRepository(db), store.NewURLRepository(db), store.NewPageRepository(db)
+	return store.NewJobRepository(db), store.NewURLRepository(db), store.NewPageRepository(db, store.WithContentDir(t.TempDir()))
 }
 
 func newJob() *entities.Job {
@@ -188,6 +190,88 @@ func TestURLRepository_CountByStatus(t *testing.T) {
 	assert.Equal(t, 3, counts[entities.URLStatusPending])
 }
 
+func TestURLRepository_Complete_PreservesUniqueColumnsForSparseWorkerPayload(t *testing.T) {
+	jobs, urls, _ := setupDB(t)
+	ctx := context.Background()
+
+	job := newJob()
+	require.NoError(t, jobs.Create(ctx, job))
+
+	u1 := entities.NewCrawlURL(job.ID, "https://example.com", "https://example.com", "hash1", 0, "")
+	u2 := entities.NewCrawlURL(job.ID, "https://example.com/about", "https://example.com/about", "hash2", 1, "")
+	require.NoError(t, urls.Enqueue(ctx, u1))
+	require.NoError(t, urls.Enqueue(ctx, u2))
+
+	claimed, err := urls.Claim(ctx, job.ID, 10)
+	require.NoError(t, err)
+	require.Len(t, claimed, 2)
+
+	for _, claimedURL := range claimed {
+		// Worker results only carry the fields needed for state transitions.
+		sparse := &entities.CrawlURL{
+			ID:         claimedURL.ID,
+			JobID:      claimedURL.JobID,
+			Normalized: claimedURL.Normalized,
+			Depth:      claimedURL.Depth,
+			Status:     entities.URLStatusCrawling,
+		}
+		require.NoError(t, sparse.MarkDone())
+		require.NoError(t, urls.Complete(ctx, sparse))
+	}
+
+	done1, err := urls.FindByHash(ctx, job.ID, "hash1")
+	require.NoError(t, err)
+	require.NotNil(t, done1)
+	assert.Equal(t, entities.URLStatusDone, done1.Status)
+	assert.Equal(t, "hash1", done1.URLHash)
+	assert.False(t, done1.CreatedAt.IsZero())
+
+	done2, err := urls.FindByHash(ctx, job.ID, "hash2")
+	require.NoError(t, err)
+	require.NotNil(t, done2)
+	assert.Equal(t, entities.URLStatusDone, done2.Status)
+	assert.Equal(t, "hash2", done2.URLHash)
+	assert.False(t, done2.CreatedAt.IsZero())
+}
+
+func TestURLRepository_FindByJobIDAndStatuses(t *testing.T) {
+	jobs, urls, _ := setupDB(t)
+	ctx := context.Background()
+
+	job := newJob()
+	require.NoError(t, jobs.Create(ctx, job))
+
+	u1 := entities.NewCrawlURL(job.ID, "https://example.com/error", "https://example.com/error", "hash1", 1, "")
+	u2 := entities.NewCrawlURL(job.ID, "https://example.com/blocked", "https://example.com/blocked", "hash2", 2, "")
+	u3 := entities.NewCrawlURL(job.ID, "https://example.com/done", "https://example.com/done", "hash3", 3, "")
+	require.NoError(t, urls.Enqueue(ctx, u1))
+	require.NoError(t, urls.Enqueue(ctx, u2))
+	require.NoError(t, urls.Enqueue(ctx, u3))
+
+	for _, u := range []*entities.CrawlURL{u1, u2, u3} {
+		require.NoError(t, u.Claim())
+	}
+
+	require.NoError(t, u1.MarkError())
+	u1.LastError = "fetch timeout"
+	require.NoError(t, urls.Complete(ctx, u1))
+
+	require.NoError(t, u2.MarkBlocked())
+	u2.LastError = "blocked by robots.txt"
+	require.NoError(t, urls.Complete(ctx, u2))
+
+	require.NoError(t, u3.MarkDone())
+	require.NoError(t, urls.Complete(ctx, u3))
+
+	found, err := urls.FindByJobIDAndStatuses(ctx, job.ID, []entities.URLStatus{entities.URLStatusError, entities.URLStatusBlocked}, 10, 0)
+	require.NoError(t, err)
+	require.Len(t, found, 2)
+	assert.Equal(t, entities.URLStatusBlocked, found[0].Status)
+	assert.Equal(t, "blocked by robots.txt", found[0].LastError)
+	assert.Equal(t, entities.URLStatusError, found[1].Status)
+	assert.Equal(t, "fetch timeout", found[1].LastError)
+}
+
 // --- Page Repository Tests ---
 
 func TestPageRepository_StoreAndFind(t *testing.T) {
@@ -204,6 +288,7 @@ func TestPageRepository_StoreAndFind(t *testing.T) {
 	page.HTTPStatus = 200
 	page.Title = "Example"
 	page.ContentType = "text/html"
+	page.RawContent = []byte("<html><body>example</body></html>")
 	page.FetchedAt = time.Now().UTC()
 	page.FetchDuration = 150 * time.Millisecond
 	page.Headers = map[string]string{"Content-Type": "text/html"}
@@ -220,6 +305,10 @@ func TestPageRepository_StoreAndFind(t *testing.T) {
 	assert.Equal(t, "Example", found.Title)
 	assert.Len(t, found.Links, 1)
 	assert.Equal(t, 150*time.Millisecond, found.FetchDuration)
+	assert.NotEmpty(t, found.ContentPath)
+	assert.Equal(t, int64(len("<html><body>example</body></html>")), found.ContentSize)
+	_, err = os.Stat(filepath.Clean(found.ContentPath))
+	require.NoError(t, err)
 }
 
 func TestPageRepository_FindByJobID(t *testing.T) {
@@ -235,6 +324,7 @@ func TestPageRepository_FindByJobID(t *testing.T) {
 
 		p := entities.NewPage(u.ID, job.ID)
 		p.HTTPStatus = 200
+		p.RawContent = []byte("page")
 		p.FetchedAt = time.Now().UTC()
 		require.NoError(t, pages.Store(ctx, p))
 	}

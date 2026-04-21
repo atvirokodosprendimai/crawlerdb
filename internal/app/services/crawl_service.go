@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"strings"
 
 	broker "github.com/atvirokodosprendimai/crawlerdb/internal/adapters/nats"
 	"github.com/atvirokodosprendimai/crawlerdb/internal/domain/entities"
@@ -41,12 +42,12 @@ func NewCrawlService(
 
 // CrawlTask is the message dispatched to crawler workers.
 type CrawlTask struct {
-	JobID   string             `json:"job_id"`
-	URLID   string             `json:"url_id"`
-	URL     string             `json:"url"`
-	Depth   int                `json:"depth"`
-	Config  valueobj.CrawlConfig `json:"config"`
-	SeedHost string            `json:"seed_host"`
+	JobID    string               `json:"job_id"`
+	URLID    string               `json:"url_id"`
+	URL      string               `json:"url"`
+	Depth    int                  `json:"depth"`
+	Config   valueobj.CrawlConfig `json:"config"`
+	SeedHost string               `json:"seed_host"`
 }
 
 // EnqueueSeedURL adds the initial seed URL to the frontier.
@@ -99,12 +100,20 @@ func (s *CrawlService) DispatchURLs(ctx context.Context, jobID string, cfg value
 func (s *CrawlService) ProcessResult(ctx context.Context, result *entities.CrawlResult) error {
 	// Update URL status.
 	if result.Success {
+		result.URL.LastError = ""
 		if err := result.URL.MarkDone(); err != nil {
 			return fmt.Errorf("mark URL done: %w", err)
 		}
 	} else {
-		if err := result.URL.MarkError(); err != nil {
-			return fmt.Errorf("mark URL error: %w", err)
+		result.URL.LastError = result.Error
+		if shouldMarkBlocked(result) {
+			if err := result.URL.MarkBlocked(); err != nil {
+				return fmt.Errorf("mark URL blocked: %w", err)
+			}
+		} else {
+			if err := result.URL.MarkError(); err != nil {
+				return fmt.Errorf("mark URL error: %w", err)
+			}
 		}
 	}
 	if err := s.urlRepo.Complete(ctx, result.URL); err != nil {
@@ -151,6 +160,16 @@ func (s *CrawlService) ProcessResult(ctx context.Context, result *entities.Crawl
 	}
 
 	return nil
+}
+
+func shouldMarkBlocked(result *entities.CrawlResult) bool {
+	if result == nil {
+		return false
+	}
+	if result.AntiBotEvent != nil {
+		return true
+	}
+	return strings.Contains(strings.ToLower(result.Error), "blocked")
 }
 
 // CheckCompletion checks if a job has no more pending/crawling URLs.

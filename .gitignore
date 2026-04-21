@@ -7,3 +7,6 @@ entities.json
 core
 crawler
 gui
+crawlerdb*
+.crawlerdb*
+data/

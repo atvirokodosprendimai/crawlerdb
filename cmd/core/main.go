@@ -63,7 +63,7 @@ func main() {
 	// Create repositories.
 	jobRepo := store.NewJobRepository(db)
 	urlRepo := store.NewURLRepository(db)
-	pageRepo := store.NewPageRepository(db)
+	pageRepo := store.NewPageRepository(db, store.WithContentDir(cfg.Crawler.ContentDir))
 	workerRepo := store.NewWorkerRepository(db)
 	domainRepo := store.NewDomainAssignmentRepository(db)
 
@@ -82,7 +82,7 @@ func main() {
 	// Handle job.create requests.
 	_, _ = nc.Subscribe("job.create", func(msg *nats.Msg) {
 		var req struct {
-			SeedURL string              `json:"seed_url"`
+			SeedURL string               `json:"seed_url"`
 			Config  valueobj.CrawlConfig `json:"config"`
 		}
 		if err := json.Unmarshal(msg.Data, &req); err != nil {
@@ -106,6 +106,35 @@ func main() {
 		_ = msg.Respond(reply)
 
 		logger.Info("job created", "id", job.ID, "seed", req.SeedURL)
+	})
+
+	_, _ = nc.Subscribe("job.retry", func(msg *nats.Msg) {
+		var req struct {
+			JobID string `json:"job_id"`
+		}
+		if err := json.Unmarshal(msg.Data, &req); err != nil {
+			reply, _ := json.Marshal(map[string]string{"error": err.Error()})
+			_ = msg.Respond(reply)
+			return
+		}
+
+		job, err := jobSvc.RetryJob(ctx, req.JobID)
+		if err != nil {
+			reply, _ := json.Marshal(map[string]string{"error": err.Error()})
+			_ = msg.Respond(reply)
+			return
+		}
+
+		_ = jobSvc.StartJob(ctx, job.ID)
+		_ = crawlSvc.EnqueueSeedURL(ctx, job)
+
+		reply, _ := json.Marshal(map[string]string{
+			"job_id":        job.ID,
+			"source_job_id": req.JobID,
+		})
+		_ = msg.Respond(reply)
+
+		logger.Info("job retried", "source_id", req.JobID, "new_id", job.ID, "seed", job.SeedURL)
 	})
 
 	// Handle job status/stop/pause/resume requests.

@@ -24,6 +24,7 @@ type URLRepository interface {
 	FindByHash(ctx context.Context, jobID, urlHash string) (*entities.CrawlURL, error)
 	FindPending(ctx context.Context, jobID string, limit int) ([]*entities.CrawlURL, error)
 	FindByJobID(ctx context.Context, jobID string, limit, offset int) ([]*entities.CrawlURL, error)
+	FindByJobIDAndStatuses(ctx context.Context, jobID string, statuses []entities.URLStatus, limit, offset int) ([]*entities.CrawlURL, error)
 	CountByStatus(ctx context.Context, jobID string) (map[entities.URLStatus]int, error)
 }
 

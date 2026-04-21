@@ -13,6 +13,7 @@ type SSEBroker struct {
 	mu      sync.Mutex
 	clients map[chan []byte]struct{}
 	logger  *slog.Logger
+	closed  bool
 }
 
 // NewSSEBroker creates a new SSE broker.
@@ -38,14 +39,21 @@ func (b *SSEBroker) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	ch := make(chan []byte, 64)
 	b.mu.Lock()
+	if b.closed {
+		b.mu.Unlock()
+		http.Error(w, "server shutting down", http.StatusServiceUnavailable)
+		return
+	}
 	b.clients[ch] = struct{}{}
 	b.mu.Unlock()
 
 	defer func() {
 		b.mu.Lock()
-		delete(b.clients, ch)
+		if _, ok := b.clients[ch]; ok {
+			delete(b.clients, ch)
+			close(ch)
+		}
 		b.mu.Unlock()
-		close(ch)
 	}()
 
 	// Send initial keepalive.
@@ -94,4 +102,19 @@ func (b *SSEBroker) ClientCount() int {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return len(b.clients)
+}
+
+// Close disconnects all SSE clients and prevents new subscriptions.
+func (b *SSEBroker) Close() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	if b.closed {
+		return
+	}
+	b.closed = true
+	for ch := range b.clients {
+		close(ch)
+		delete(b.clients, ch)
+	}
 }

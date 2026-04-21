@@ -3,272 +3,1272 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CrawlerDB Dashboard</title>
+    <title>CrawlerDB Control Room</title>
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f172a; color: #e2e8f0; }
-        .header { background: #1e293b; padding: 1rem 2rem; border-bottom: 1px solid #334155; display: flex; justify-content: space-between; align-items: center; }
-        .header h1 { font-size: 1.5rem; color: #38bdf8; }
-        .status { font-size: 0.875rem; padding: 0.25rem 0.75rem; border-radius: 9999px; }
-        .status.connected { background: #065f46; color: #6ee7b7; }
-        .status.disconnected { background: #7f1d1d; color: #fca5a5; }
-        .container { max-width: 1200px; margin: 2rem auto; padding: 0 1rem; }
-        .card { background: #1e293b; border-radius: 0.5rem; padding: 1.5rem; margin-bottom: 1rem; border: 1px solid #334155; }
-        .card h2 { font-size: 1.125rem; margin-bottom: 1rem; color: #94a3b8; }
-        .btn { padding: 0.5rem 1rem; border: none; border-radius: 0.375rem; cursor: pointer; font-size: 0.875rem; font-weight: 500; }
-        .btn-primary { background: #3b82f6; color: white; }
-        .btn-primary:hover { background: #2563eb; }
-        .btn-danger { background: #ef4444; color: white; }
-        .btn-danger:hover { background: #dc2626; }
-        .btn-warning { background: #f59e0b; color: white; }
-        .btn-warning:hover { background: #d97706; }
-        .btn-success { background: #10b981; color: white; }
-        .btn-success:hover { background: #059669; }
-        table { width: 100%; border-collapse: collapse; }
-        th, td { text-align: left; padding: 0.75rem; border-bottom: 1px solid #334155; }
-        th { color: #94a3b8; font-weight: 600; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; }
-        td { font-size: 0.875rem; }
-        .badge { display: inline-block; padding: 0.125rem 0.5rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 600; }
-        .badge-pending { background: #1e3a5f; color: #93c5fd; }
-        .badge-running { background: #065f46; color: #6ee7b7; }
-        .badge-completed { background: #1e293b; color: #94a3b8; }
-        .badge-failed { background: #7f1d1d; color: #fca5a5; }
-        .badge-paused { background: #78350f; color: #fcd34d; }
-        .badge-stopped { background: #374151; color: #9ca3af; }
-        .form-group { margin-bottom: 1rem; }
-        .form-group label { display: block; margin-bottom: 0.25rem; font-size: 0.875rem; color: #94a3b8; }
-        .form-group input, .form-group select { width: 100%; padding: 0.5rem; background: #0f172a; border: 1px solid #334155; border-radius: 0.375rem; color: #e2e8f0; font-size: 0.875rem; }
-        .form-row { display: flex; gap: 1rem; }
-        .form-row .form-group { flex: 1; }
-        .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem; }
-        .stat { text-align: center; }
-        .stat .number { font-size: 2rem; font-weight: 700; color: #38bdf8; }
-        .stat .label { font-size: 0.75rem; color: #94a3b8; text-transform: uppercase; }
-        .events { max-height: 300px; overflow-y: auto; font-family: monospace; font-size: 0.8rem; }
-        .event { padding: 0.25rem 0; border-bottom: 1px solid #1e293b; color: #64748b; }
-        .actions { display: flex; gap: 0.5rem; }
-        #job-detail { display: none; }
+        :root {
+            --bg: #f3f1eb;
+            --paper: rgba(255, 255, 255, 0.76);
+            --paper-strong: rgba(255, 255, 255, 0.92);
+            --ink: #1d2430;
+            --muted: #667185;
+            --line: rgba(31, 39, 54, 0.12);
+            --accent: #1e5eff;
+            --accent-soft: rgba(30, 94, 255, 0.11);
+            --ok: #0f7b5f;
+            --ok-soft: rgba(15, 123, 95, 0.11);
+            --warn: #b46c11;
+            --warn-soft: rgba(180, 108, 17, 0.12);
+            --danger: #c43e2f;
+            --danger-soft: rgba(196, 62, 47, 0.12);
+            --shadow: 0 20px 60px rgba(42, 48, 58, 0.08);
+            --radius: 22px;
+            --radius-sm: 14px;
+            --mono: "SFMono-Regular", "IBM Plex Mono", "Menlo", monospace;
+            --sans: "IBM Plex Sans", "Avenir Next", "Segoe UI", sans-serif;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        html, body {
+            margin: 0;
+            min-height: 100%;
+        }
+
+        body {
+            font-family: var(--sans);
+            color: var(--ink);
+            background:
+                radial-gradient(circle at top left, rgba(30, 94, 255, 0.10), transparent 34%),
+                radial-gradient(circle at top right, rgba(196, 62, 47, 0.08), transparent 28%),
+                linear-gradient(180deg, #f8f5ee 0%, #efede7 100%);
+        }
+
+        .shell {
+            width: min(1560px, calc(100vw - 40px));
+            margin: 24px auto 48px;
+        }
+
+        .hero {
+            display: grid;
+            grid-template-columns: 1.4fr 0.8fr;
+            gap: 18px;
+            margin-bottom: 18px;
+        }
+
+        .panel {
+            background: var(--paper);
+            backdrop-filter: blur(18px);
+            border: 1px solid rgba(255, 255, 255, 0.68);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+        }
+
+        .hero-card {
+            padding: 26px 28px;
+        }
+
+        .eyebrow {
+            margin: 0 0 10px;
+            font-size: 12px;
+            letter-spacing: 0.18em;
+            text-transform: uppercase;
+            color: var(--muted);
+        }
+
+        .hero-title {
+            margin: 0;
+            font-size: clamp(30px, 4vw, 50px);
+            line-height: 0.98;
+            letter-spacing: -0.04em;
+            max-width: 10ch;
+        }
+
+        .hero-copy {
+            margin: 16px 0 0;
+            max-width: 64ch;
+            color: var(--muted);
+            font-size: 15px;
+            line-height: 1.55;
+        }
+
+        .hero-meta {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-top: 20px;
+        }
+
+        .pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            min-height: 38px;
+            padding: 0 14px;
+            border-radius: 999px;
+            border: 1px solid var(--line);
+            background: rgba(255, 255, 255, 0.62);
+            color: var(--ink);
+            font-size: 13px;
+            font-weight: 600;
+        }
+
+        .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: currentColor;
+        }
+
+        .dot.connected {
+            color: var(--ok);
+        }
+
+        .dot.disconnected {
+            color: var(--danger);
+        }
+
+        .hero-stats {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 14px;
+        }
+
+        .stat-card {
+            padding: 22px;
+            border-radius: var(--radius);
+            background: var(--paper-strong);
+            border: 1px solid var(--line);
+        }
+
+        .stat-card.alert {
+            background: linear-gradient(160deg, rgba(196, 62, 47, 0.12), rgba(255, 255, 255, 0.86));
+        }
+
+        .stat-label {
+            margin: 0;
+            font-size: 12px;
+            letter-spacing: 0.14em;
+            text-transform: uppercase;
+            color: var(--muted);
+        }
+
+        .stat-value {
+            margin: 14px 0 4px;
+            font-size: clamp(30px, 4vw, 44px);
+            line-height: 1;
+            letter-spacing: -0.04em;
+        }
+
+        .stat-note {
+            margin: 0;
+            color: var(--muted);
+            font-size: 13px;
+        }
+
+        .workspace {
+            display: grid;
+            grid-template-columns: 360px minmax(0, 1fr);
+            gap: 18px;
+        }
+
+        .stack {
+            display: grid;
+            gap: 18px;
+        }
+
+        .section {
+            padding: 22px;
+        }
+
+        .section-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 18px;
+        }
+
+        .section-title {
+            margin: 0;
+            font-size: 17px;
+            letter-spacing: -0.02em;
+        }
+
+        .section-subtitle {
+            margin: 6px 0 0;
+            color: var(--muted);
+            font-size: 13px;
+        }
+
+        .status-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 7px 11px;
+            border-radius: 999px;
+            font-size: 12px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            border: 1px solid transparent;
+        }
+
+        .status-running, .status-done {
+            background: var(--ok-soft);
+            color: var(--ok);
+            border-color: rgba(15, 123, 95, 0.12);
+        }
+
+        .status-pending, .status-crawling, .status-paused {
+            background: var(--warn-soft);
+            color: var(--warn);
+            border-color: rgba(180, 108, 17, 0.14);
+        }
+
+        .status-error, .status-blocked, .status-failed, .status-stopped {
+            background: var(--danger-soft);
+            color: var(--danger);
+            border-color: rgba(196, 62, 47, 0.14);
+        }
+
+        .status-completed {
+            background: rgba(50, 79, 120, 0.10);
+            color: #375a8a;
+            border-color: rgba(50, 79, 120, 0.12);
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            min-height: 42px;
+            padding: 0 14px;
+            border-radius: 12px;
+            border: 0;
+            cursor: pointer;
+            font: inherit;
+            font-size: 13px;
+            font-weight: 700;
+            transition: transform 120ms ease, box-shadow 120ms ease, opacity 120ms ease;
+        }
+
+        .btn:hover {
+            transform: translateY(-1px);
+        }
+
+        .btn:disabled {
+            opacity: 0.46;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .btn-primary {
+            color: white;
+            background: linear-gradient(135deg, #2a61ff 0%, #174bda 100%);
+            box-shadow: 0 10px 25px rgba(30, 94, 255, 0.18);
+        }
+
+        .btn-secondary {
+            color: var(--ink);
+            background: rgba(255, 255, 255, 0.9);
+            border: 1px solid var(--line);
+        }
+
+        .btn-danger {
+            color: white;
+            background: linear-gradient(135deg, #d74d37 0%, #bb2f2f 100%);
+        }
+
+        .btn-warning {
+            color: white;
+            background: linear-gradient(135deg, #c88820 0%, #ad6612 100%);
+        }
+
+        .btn-ghost {
+            color: var(--muted);
+            background: transparent;
+            border: 1px solid var(--line);
+        }
+
+        form {
+            display: grid;
+            gap: 14px;
+        }
+
+        label {
+            display: grid;
+            gap: 7px;
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--muted);
+        }
+
+        input, select {
+            width: 100%;
+            min-height: 46px;
+            border-radius: 12px;
+            border: 1px solid rgba(31, 39, 54, 0.14);
+            background: rgba(255, 255, 255, 0.92);
+            padding: 0 14px;
+            color: var(--ink);
+            font: inherit;
+            font-size: 14px;
+        }
+
+        input:focus, select:focus, button:focus {
+            outline: 2px solid rgba(30, 94, 255, 0.18);
+            outline-offset: 2px;
+        }
+
+        .field-row {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 12px;
+        }
+
+        .job-list {
+            display: grid;
+            gap: 12px;
+        }
+
+        .job-item {
+            padding: 16px;
+            border-radius: 18px;
+            border: 1px solid rgba(31, 39, 54, 0.10);
+            background: rgba(255, 255, 255, 0.72);
+            cursor: pointer;
+            transition: transform 140ms ease, border-color 140ms ease, box-shadow 140ms ease;
+        }
+
+        .job-item:hover {
+            transform: translateY(-1px);
+            border-color: rgba(30, 94, 255, 0.24);
+            box-shadow: 0 14px 30px rgba(35, 45, 58, 0.07);
+        }
+
+        .job-item.active {
+            border-color: rgba(30, 94, 255, 0.35);
+            background: linear-gradient(180deg, rgba(30, 94, 255, 0.08), rgba(255, 255, 255, 0.84));
+        }
+
+        .job-top,
+        .job-bottom {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+        }
+
+        .job-top {
+            margin-bottom: 12px;
+        }
+
+        .job-url {
+            margin: 0;
+            font-size: 14px;
+            font-weight: 700;
+            line-height: 1.35;
+            word-break: break-word;
+        }
+
+        .job-id {
+            margin-top: 6px;
+            font-family: var(--mono);
+            font-size: 12px;
+            color: var(--muted);
+        }
+
+        .metric-inline {
+            display: flex;
+            gap: 14px;
+            flex-wrap: wrap;
+            margin-top: 14px;
+        }
+
+        .metric-inline strong {
+            display: block;
+            font-size: 18px;
+            line-height: 1;
+            letter-spacing: -0.03em;
+        }
+
+        .metric-inline span {
+            display: block;
+            margin-top: 4px;
+            font-size: 11px;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--muted);
+        }
+
+        .job-bottom {
+            margin-top: 14px;
+            padding-top: 14px;
+            border-top: 1px solid rgba(31, 39, 54, 0.08);
+            font-size: 12px;
+            color: var(--muted);
+        }
+
+        .empty {
+            padding: 20px;
+            border-radius: 18px;
+            border: 1px dashed rgba(31, 39, 54, 0.16);
+            color: var(--muted);
+            text-align: center;
+            font-size: 14px;
+            background: rgba(255, 255, 255, 0.45);
+        }
+
+        .focus {
+            display: grid;
+            gap: 18px;
+        }
+
+        .selected-card {
+            padding: 24px;
+        }
+
+        .selected-top {
+            display: flex;
+            justify-content: space-between;
+            gap: 20px;
+            align-items: flex-start;
+            margin-bottom: 20px;
+        }
+
+        .selected-title {
+            margin: 0;
+            font-size: clamp(24px, 3vw, 34px);
+            line-height: 1.03;
+            letter-spacing: -0.04em;
+            max-width: 18ch;
+            word-break: break-word;
+        }
+
+        .selected-id {
+            margin: 8px 0 0;
+            color: var(--muted);
+            font-family: var(--mono);
+            font-size: 12px;
+        }
+
+        .control-row {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+        }
+
+        .signal-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 12px;
+        }
+
+        .signal-card {
+            padding: 18px;
+            border-radius: 18px;
+            border: 1px solid rgba(31, 39, 54, 0.08);
+            background: rgba(255, 255, 255, 0.86);
+        }
+
+        .signal-card.hot {
+            background: linear-gradient(160deg, rgba(196, 62, 47, 0.10), rgba(255, 255, 255, 0.92));
+        }
+
+        .signal-value {
+            margin: 10px 0 4px;
+            font-size: clamp(26px, 3vw, 34px);
+            line-height: 1;
+            letter-spacing: -0.04em;
+        }
+
+        .signal-label {
+            margin: 0;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--muted);
+        }
+
+        .signal-note {
+            margin: 6px 0 0;
+            font-size: 12px;
+            color: var(--muted);
+        }
+
+        .detail-grid {
+            display: grid;
+            grid-template-columns: minmax(0, 1.3fr) minmax(320px, 0.7fr);
+            gap: 18px;
+        }
+
+        .exceptions-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .exceptions-table th,
+        .exceptions-table td {
+            padding: 14px 10px;
+            text-align: left;
+            border-bottom: 1px solid rgba(31, 39, 54, 0.08);
+            vertical-align: top;
+        }
+
+        .exceptions-table th {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--muted);
+        }
+
+        .exceptions-table td {
+            font-size: 13px;
+        }
+
+        .url-cell {
+            max-width: 0;
+        }
+
+        .url-line {
+            display: block;
+            color: var(--ink);
+            text-decoration: none;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .url-line:hover {
+            color: var(--accent);
+        }
+
+        .context-line {
+            display: block;
+            margin-top: 4px;
+            color: var(--muted);
+            font-family: var(--mono);
+            font-size: 11px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .reason {
+            color: var(--danger);
+            line-height: 1.45;
+            word-break: break-word;
+        }
+
+        .section-actions {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .pager {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-top: 16px;
+        }
+
+        .pager-note {
+            color: var(--muted);
+            font-size: 12px;
+        }
+
+        .mini-grid {
+            display: grid;
+            gap: 12px;
+        }
+
+        .stream {
+            display: grid;
+            gap: 10px;
+            max-height: 560px;
+            overflow: auto;
+        }
+
+        .stream-item {
+            padding: 14px;
+            border-radius: 16px;
+            background: rgba(255, 255, 255, 0.82);
+            border: 1px solid rgba(31, 39, 54, 0.08);
+        }
+
+        .stream-meta {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            margin-bottom: 8px;
+            font-size: 11px;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+        }
+
+        .stream-body {
+            margin: 0;
+            font-family: var(--mono);
+            font-size: 12px;
+            line-height: 1.5;
+            color: var(--ink);
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .quiet-note {
+            font-size: 13px;
+            color: var(--muted);
+            line-height: 1.55;
+        }
+
+        .status-summary {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px;
+        }
+
+        .status-summary .mini {
+            padding: 14px;
+            border-radius: 16px;
+            background: rgba(255, 255, 255, 0.84);
+            border: 1px solid rgba(31, 39, 54, 0.08);
+        }
+
+        .mini strong {
+            display: block;
+            font-size: 20px;
+            line-height: 1;
+        }
+
+        .mini span {
+            display: block;
+            margin-top: 6px;
+            font-size: 11px;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+        }
+
+        @media (max-width: 1200px) {
+            .hero,
+            .workspace,
+            .detail-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .signal-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+        }
+
+        @media (max-width: 720px) {
+            .shell {
+                width: min(100vw - 20px, 100%);
+                margin-top: 12px;
+            }
+
+            .hero-card,
+            .section,
+            .selected-card {
+                padding: 18px;
+            }
+
+            .field-row,
+            .hero-stats,
+            .signal-grid,
+            .status-summary {
+                grid-template-columns: 1fr;
+            }
+
+            .selected-top,
+            .pager {
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            .control-row {
+                justify-content: flex-start;
+            }
+        }
     </style>
 </head>
 <body>
-    <div class="header">
-        <h1>CrawlerDB</h1>
-        <span id="sse-status" class="status disconnected">Disconnected</span>
-    </div>
+    <div class="shell">
+        <section class="hero">
+            <div class="panel hero-card">
+                <p class="eyebrow">Crawler Operations</p>
+                <h1 class="hero-title">Exceptions first. Everything else second.</h1>
+                <p class="hero-copy">
+                    This console is optimized for large crawls. It summarizes queue health, ranks jobs by incident load,
+                    and keeps the operator focused on blocked and failed URLs instead of raw crawl volume.
+                </p>
+                <div class="hero-meta">
+                    <span id="connection-pill" class="pill"><span id="connection-dot" class="dot disconnected"></span><span id="connection-text">Disconnected</span></span>
+                    <span class="pill">Only exceptions are expanded by default</span>
+                    <span class="pill">Paginated incident queue for large jobs</span>
+                </div>
+            </div>
+            <div class="hero-stats">
+                <div class="panel stat-card alert">
+                    <p class="stat-label">Open Incidents</p>
+                    <p id="global-incidents" class="stat-value">0</p>
+                    <p class="stat-note">Blocked and failed URLs across all listed jobs.</p>
+                </div>
+                <div class="panel stat-card">
+                    <p class="stat-label">Running Jobs</p>
+                    <p id="global-running" class="stat-value">0</p>
+                    <p class="stat-note">Active crawls currently consuming worker capacity.</p>
+                </div>
+                <div class="panel stat-card">
+                    <p class="stat-label">Queued URLs</p>
+                    <p id="global-queue" class="stat-value">0</p>
+                    <p class="stat-note">Pending plus crawling URLs waiting for completion.</p>
+                </div>
+                <div class="panel stat-card">
+                    <p class="stat-label">Selected Job</p>
+                    <p id="global-selected" class="stat-value">None</p>
+                    <p id="global-selected-note" class="stat-note">Choose a job to open its exception desk.</p>
+                </div>
+            </div>
+        </section>
 
-    <div class="container">
-        <!-- New Job Form -->
-        <div class="card">
-            <h2>New Crawl Job</h2>
-            <form id="new-job-form">
-                <div class="form-row">
-                    <div class="form-group">
-                        <label for="seed-url">Seed URL</label>
-                        <input type="url" id="seed-url" placeholder="https://example.com" required>
+        <section class="workspace">
+            <aside class="stack">
+                <div class="panel section">
+                    <div class="section-head">
+                        <div>
+                            <h2 class="section-title">Start Crawl</h2>
+                            <p class="section-subtitle">Compact form, sensible defaults.</p>
+                        </div>
                     </div>
-                    <div class="form-group">
-                        <label for="scope">Scope</label>
-                        <select id="scope">
-                            <option value="same_domain">Same Domain</option>
-                            <option value="include_subdomains">Include Subdomains</option>
-                            <option value="follow_externals">Follow Externals</option>
-                        </select>
+                    <form id="new-job-form">
+                        <label>
+                            Seed URL
+                            <input type="url" id="seed-url" placeholder="https://example.com" required>
+                        </label>
+                        <div class="field-row">
+                            <label>
+                                Scope
+                                <select id="scope">
+                                    <option value="same_domain">Same domain</option>
+                                    <option value="include_subdomains">Include subdomains</option>
+                                    <option value="follow_externals">Follow externals</option>
+                                </select>
+                            </label>
+                            <label>
+                                Max depth
+                                <input type="number" id="max-depth" value="3" min="1" max="20">
+                            </label>
+                        </div>
+                        <button id="create-job-button" type="submit" class="btn btn-primary">Start new crawl</button>
+                    </form>
+                </div>
+
+                <div class="panel section">
+                    <div class="section-head">
+                        <div>
+                            <h2 class="section-title">Job Triage</h2>
+                            <p class="section-subtitle">Sorted by exceptions, then active status.</p>
+                        </div>
+                        <button class="btn btn-secondary" type="button" onclick="refreshOverview()">Refresh</button>
                     </div>
-                    <div class="form-group">
-                        <label for="max-depth">Max Depth</label>
-                        <input type="number" id="max-depth" value="3" min="1" max="20">
+                    <div id="job-list" class="job-list"></div>
+                </div>
+            </aside>
+
+            <main class="focus">
+                <div id="selected-job-card" class="panel selected-card">
+                    <div id="selected-job-empty" class="empty">Select a job to inspect its exception queue.</div>
+                    <div id="selected-job-content" style="display:none;">
+                        <div class="selected-top">
+                            <div>
+                                <div id="selected-job-status"></div>
+                                <h2 id="selected-job-title" class="selected-title"></h2>
+                                <p id="selected-job-id" class="selected-id"></p>
+                            </div>
+                            <div id="selected-job-controls" class="control-row"></div>
+                        </div>
+                        <div id="selected-signal-grid" class="signal-grid"></div>
                     </div>
                 </div>
-                <button type="submit" class="btn btn-primary">Start Crawl</button>
-            </form>
-        </div>
 
-        <!-- Jobs List -->
-        <div class="card">
-            <h2>Jobs</h2>
-            <table>
-                <thead>
-                    <tr>
-                        <th>ID</th>
-                        <th>Seed URL</th>
-                        <th>Status</th>
-                        <th>Created</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody id="jobs-table"></tbody>
-            </table>
-        </div>
+                <div class="detail-grid">
+                    <section class="panel section">
+                        <div class="section-head">
+                            <div>
+                                <h2 class="section-title">Exception Queue</h2>
+                                <p class="section-subtitle">Latest blocked and failed URLs only.</p>
+                            </div>
+                            <div class="section-actions">
+                                <button class="btn btn-secondary" type="button" onclick="reloadExceptions(true)">Newest</button>
+                                <button class="btn btn-ghost" type="button" onclick="exportSelected('csv')">Export CSV</button>
+                                <button class="btn btn-ghost" type="button" onclick="exportSelected('json')">Export JSON</button>
+                            </div>
+                        </div>
+                        <div id="exceptions-empty" class="empty">No job selected.</div>
+                        <div id="exceptions-wrap" style="display:none;">
+                            <table class="exceptions-table">
+                                <thead>
+                                    <tr>
+                                        <th>Status</th>
+                                        <th>URL</th>
+                                        <th>Reason</th>
+                                        <th>Updated</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="exceptions-body"></tbody>
+                            </table>
+                            <div class="pager">
+                                <p id="exceptions-page-note" class="pager-note">Page 1</p>
+                                <div class="section-actions">
+                                    <button id="exceptions-prev" class="btn btn-secondary" type="button" onclick="pageExceptions(-1)">Previous</button>
+                                    <button id="exceptions-next" class="btn btn-secondary" type="button" onclick="pageExceptions(1)">Next</button>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
 
-        <!-- Job Detail -->
-        <div id="job-detail" class="card">
-            <h2>Job: <span id="detail-job-id"></span></h2>
-            <div class="stats" id="job-stats"></div>
-            <div style="margin-top: 1rem;">
-                <h2>Pages</h2>
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Title</th>
-                            <th>HTTP</th>
-                            <th>Links</th>
-                            <th>Fetched</th>
-                        </tr>
-                    </thead>
-                    <tbody id="pages-table"></tbody>
-                </table>
-            </div>
-            <div style="margin-top: 1rem;" class="actions">
-                <button class="btn btn-primary" onclick="exportJob('json')">Export JSON</button>
-                <button class="btn btn-primary" onclick="exportJob('csv')">Export CSV</button>
-                <button class="btn btn-primary" onclick="exportJob('sitemap')">Export Sitemap</button>
-            </div>
-        </div>
+                    <aside class="stack">
+                        <section class="panel section">
+                            <div class="section-head">
+                                <div>
+                                    <h2 class="section-title">Status Summary</h2>
+                                    <p class="section-subtitle">Counts, not bulk rows.</p>
+                                </div>
+                            </div>
+                            <div id="status-summary" class="status-summary">
+                                <div class="mini"><strong>0</strong><span>Pending</span></div>
+                                <div class="mini"><strong>0</strong><span>Crawling</span></div>
+                                <div class="mini"><strong>0</strong><span>Done</span></div>
+                                <div class="mini"><strong>0</strong><span>Incidents</span></div>
+                            </div>
+                        </section>
 
-        <!-- Events Log -->
-        <div class="card">
-            <h2>Live Events</h2>
-            <div class="events" id="events-log"></div>
-        </div>
+                        <section class="panel section">
+                            <div class="section-head">
+                                <div>
+                                    <h2 class="section-title">Live Stream</h2>
+                                    <p class="section-subtitle">Recent events only. Kept small by design.</p>
+                                </div>
+                            </div>
+                            <div id="event-stream" class="stream"></div>
+                            <p class="quiet-note">
+                                The event stream is intentionally shallow. Use it to confirm motion, not as a log sink.
+                            </p>
+                        </section>
+                    </aside>
+                </div>
+            </main>
+        </section>
     </div>
 
     <script>
-        const API = '/api';
-        let currentJobID = null;
+        const API = "/api";
+        const EXCEPTION_PAGE_SIZE = 25;
 
-        // SSE Connection
+        let overview = [];
+        let selectedJobId = null;
+        let selectedJobCounts = {};
+        let selectedExceptionsOffset = 0;
+        let eventSource = null;
+        let refreshTimer = null;
+
+        function statusClass(status) {
+            return `status-chip status-${status || "pending"}`;
+        }
+
+        function escapeHTML(value) {
+            return String(value ?? "")
+                .replaceAll("&", "&amp;")
+                .replaceAll("<", "&lt;")
+                .replaceAll(">", "&gt;")
+                .replaceAll('"', "&quot;")
+                .replaceAll("'", "&#39;");
+        }
+
+        function formatDate(value) {
+            if (!value) return "—";
+            const date = new Date(value);
+            if (Number.isNaN(date.getTime())) return "—";
+            return date.toLocaleString();
+        }
+
+        function shortId(value) {
+            if (!value) return "—";
+            return value.length > 14 ? `${value.slice(0, 14)}…` : value;
+        }
+
+        function scheduleRefresh(delay = 400) {
+            window.clearTimeout(refreshTimer);
+            refreshTimer = window.setTimeout(() => {
+                refreshOverview();
+                if (selectedJobId) {
+                    loadSelectedJob(selectedJobId, false);
+                }
+            }, delay);
+        }
+
+        function setConnectionState(isConnected) {
+            document.getElementById("connection-dot").className = `dot ${isConnected ? "connected" : "disconnected"}`;
+            document.getElementById("connection-text").textContent = isConnected ? "Live updates connected" : "Disconnected";
+        }
+
         function connectSSE() {
-            const es = new EventSource(`${API}/events`);
-            const statusEl = document.getElementById('sse-status');
+            if (eventSource) {
+                eventSource.close();
+            }
 
-            es.onopen = () => {
-                statusEl.textContent = 'Connected';
-                statusEl.className = 'status connected';
-            };
-
-            es.onerror = () => {
-                statusEl.textContent = 'Disconnected';
-                statusEl.className = 'status disconnected';
-            };
-
-            es.onmessage = (e) => {
-                const data = JSON.parse(e.data);
-                addEvent(data);
-                refreshJobs();
-                if (currentJobID) loadJobDetail(currentJobID);
+            eventSource = new EventSource(`${API}/events`);
+            eventSource.onopen = () => setConnectionState(true);
+            eventSource.onerror = () => setConnectionState(false);
+            eventSource.onmessage = (event) => {
+                const payload = JSON.parse(event.data);
+                addEvent(payload);
+                scheduleRefresh();
             };
         }
 
-        function addEvent(data) {
-            const log = document.getElementById('events-log');
-            const el = document.createElement('div');
-            el.className = 'event';
-            el.textContent = `[${new Date().toLocaleTimeString()}] ${data.type}: ${JSON.stringify(data.payload)}`;
-            log.prepend(el);
-            while (log.children.length > 100) log.removeChild(log.lastChild);
+        function addEvent(event) {
+            const stream = document.getElementById("event-stream");
+            const item = document.createElement("article");
+            item.className = "stream-item";
+            item.innerHTML = `
+                <div class="stream-meta">
+                    <span>${escapeHTML(event.type || "event")}</span>
+                    <span>${new Date().toLocaleTimeString()}</span>
+                </div>
+                <pre class="stream-body">${escapeHTML(JSON.stringify(event.payload, null, 2))}</pre>
+            `;
+            stream.prepend(item);
+            while (stream.children.length > 40) {
+                stream.removeChild(stream.lastChild);
+            }
         }
 
-        // API calls
-        async function refreshJobs() {
-            const resp = await fetch(`${API}/jobs`);
-            const jobs = await resp.json();
-            const tbody = document.getElementById('jobs-table');
-            tbody.innerHTML = '';
+        async function fetchJSON(url, options) {
+            const response = await fetch(url, options);
+            if (!response.ok) {
+                let message = `${response.status} ${response.statusText}`;
+                try {
+                    const body = await response.json();
+                    if (body && body.error) {
+                        message = body.error;
+                    }
+                } catch (_) {}
+                throw new Error(message);
+            }
+            return response.json();
+        }
 
-            if (!jobs || jobs.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#64748b;">No jobs yet</td></tr>';
+        function sortOverview(items) {
+            return [...items].sort((a, b) => {
+                const byExceptions = (b.exception_count || 0) - (a.exception_count || 0);
+                if (byExceptions !== 0) return byExceptions;
+
+                const statusWeight = {
+                    running: 0,
+                    paused: 1,
+                    failed: 2,
+                    stopped: 3,
+                    pending: 4,
+                    completed: 5
+                };
+                const aWeight = statusWeight[a.job?.status] ?? 10;
+                const bWeight = statusWeight[b.job?.status] ?? 10;
+                if (aWeight !== bWeight) return aWeight - bWeight;
+
+                return new Date(b.job?.updated_at || 0) - new Date(a.job?.updated_at || 0);
+            });
+        }
+
+        function renderOverview() {
+            const list = document.getElementById("job-list");
+            list.innerHTML = "";
+
+            if (!overview.length) {
+                list.innerHTML = `<div class="empty">No crawl jobs yet. Start with a seed URL.</div>`;
                 return;
             }
 
-            for (const job of jobs) {
-                const tr = document.createElement('tr');
-                tr.innerHTML = `
-                    <td><a href="#" onclick="loadJobDetail('${job.id}')" style="color:#38bdf8;">${job.id.substring(0, 12)}...</a></td>
-                    <td>${job.seed_url}</td>
-                    <td><span class="badge badge-${job.status}">${job.status}</span></td>
-                    <td>${new Date(job.created_at).toLocaleString()}</td>
-                    <td class="actions">
-                        ${job.status === 'running' ? `
-                            <button class="btn btn-warning" onclick="jobAction('${job.id}','pause')">Pause</button>
-                            <button class="btn btn-danger" onclick="jobAction('${job.id}','stop')">Stop</button>
-                        ` : ''}
-                        ${job.status === 'paused' ? `
-                            <button class="btn btn-success" onclick="jobAction('${job.id}','resume')">Resume</button>
-                            <button class="btn btn-danger" onclick="jobAction('${job.id}','stop')">Stop</button>
-                        ` : ''}
-                    </td>
+            for (const item of sortOverview(overview)) {
+                const job = item.job;
+                const counts = item.counts || {};
+                const queue = (counts.pending || 0) + (counts.crawling || 0);
+                const incidents = item.exception_count || 0;
+
+                const card = document.createElement("button");
+                card.type = "button";
+                card.className = `job-item ${selectedJobId === job.id ? "active" : ""}`;
+                card.onclick = () => selectJob(job.id);
+                card.innerHTML = `
+                    <div class="job-top">
+                        <div>
+                            <p class="job-url">${escapeHTML(job.seed_url)}</p>
+                            <div class="job-id">${escapeHTML(shortId(job.id))}</div>
+                        </div>
+                        <span class="${statusClass(job.status)}">${escapeHTML(job.status)}</span>
+                    </div>
+                    <div class="metric-inline">
+                        <div><strong>${incidents}</strong><span>Incidents</span></div>
+                        <div><strong>${queue}</strong><span>In flight</span></div>
+                        <div><strong>${counts.done || 0}</strong><span>Done</span></div>
+                    </div>
+                    <div class="job-bottom">
+                        <span>${formatDate(job.updated_at || job.created_at)}</span>
+                        <span>${counts.blocked || 0} blocked / ${counts.error || 0} failed</span>
+                    </div>
                 `;
-                tbody.appendChild(tr);
+                list.appendChild(card);
             }
         }
 
-        async function loadJobDetail(id) {
-            currentJobID = id;
-            document.getElementById('job-detail').style.display = 'block';
-            document.getElementById('detail-job-id').textContent = id.substring(0, 12) + '...';
+        function renderGlobalStats() {
+            const incidents = overview.reduce((sum, item) => sum + (item.exception_count || 0), 0);
+            const running = overview.filter((item) => item.job?.status === "running").length;
+            const queue = overview.reduce((sum, item) => {
+                const counts = item.counts || {};
+                return sum + (counts.pending || 0) + (counts.crawling || 0);
+            }, 0);
 
-            // Load URL stats
-            const urlResp = await fetch(`${API}/jobs/${id}/urls`);
-            const urlStats = await urlResp.json();
-            const statsEl = document.getElementById('job-stats');
-            statsEl.innerHTML = '';
-            for (const [status, count] of Object.entries(urlStats || {})) {
-                statsEl.innerHTML += `<div class="stat"><div class="number">${count}</div><div class="label">${status}</div></div>`;
-            }
+            document.getElementById("global-incidents").textContent = incidents.toLocaleString();
+            document.getElementById("global-running").textContent = running.toLocaleString();
+            document.getElementById("global-queue").textContent = queue.toLocaleString();
 
-            // Load pages
-            const pageResp = await fetch(`${API}/jobs/${id}/pages`);
-            const pages = await pageResp.json();
-            const tbody = document.getElementById('pages-table');
-            tbody.innerHTML = '';
-            for (const p of (pages || [])) {
-                const tr = document.createElement('tr');
-                tr.innerHTML = `
-                    <td>${p.title || '(no title)'}</td>
-                    <td>${p.http_status}</td>
-                    <td>${(p.links || []).length}</td>
-                    <td>${p.fetched_at ? new Date(p.fetched_at).toLocaleString() : '-'}</td>
-                `;
-                tbody.appendChild(tr);
+            if (!selectedJobId) {
+                document.getElementById("global-selected").textContent = "None";
+                document.getElementById("global-selected-note").textContent = "Choose a job to open its exception desk.";
             }
         }
 
-        async function jobAction(id, action) {
-            await fetch(`${API}/jobs/${id}/${action}`, { method: 'POST' });
-            refreshJobs();
-            if (currentJobID === id) loadJobDetail(id);
-        }
+        async function refreshOverview() {
+            overview = await fetchJSON(`${API}/jobs/overview`);
+            renderOverview();
+            renderGlobalStats();
 
-        function exportJob(format) {
-            if (!currentJobID) return;
-            window.open(`${API}/jobs/${currentJobID}/export?format=${format}`, '_blank');
-        }
-
-        // New job form
-        document.getElementById('new-job-form').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const body = {
-                seed_url: document.getElementById('seed-url').value,
-                config: {
-                    scope: document.getElementById('scope').value,
-                    max_depth: parseInt(document.getElementById('max-depth').value),
-                    extraction: 'standard',
-                    user_agent: 'CrawlerDB/1.0'
+            if (!selectedJobId && overview.length) {
+                const first = sortOverview(overview)[0];
+                if (first) {
+                    selectJob(first.job.id);
                 }
-            };
-            await fetch(`${API}/jobs`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(body)
-            });
-            document.getElementById('seed-url').value = '';
-            refreshJobs();
+            }
+        }
+
+        function selectedOverviewItem() {
+            return overview.find((item) => item.job?.id === selectedJobId) || null;
+        }
+
+        function renderSelectedJob(job, counts) {
+            document.getElementById("selected-job-empty").style.display = "none";
+            document.getElementById("selected-job-content").style.display = "block";
+            document.getElementById("exceptions-empty").style.display = "none";
+            document.getElementById("exceptions-wrap").style.display = "block";
+
+            document.getElementById("selected-job-status").innerHTML = `<span class="${statusClass(job.status)}">${escapeHTML(job.status)}</span>`;
+            document.getElementById("selected-job-title").textContent = job.seed_url;
+            document.getElementById("selected-job-id").textContent = `Job ${job.id}`;
+
+            document.getElementById("global-selected").textContent = shortId(job.id);
+            document.getElementById("global-selected-note").textContent = `${(counts.error || 0) + (counts.blocked || 0)} open incidents`;
+
+            const signals = [
+                {
+                    value: ((counts.error || 0) + (counts.blocked || 0)).toLocaleString(),
+                    label: "Open incidents",
+                    note: `${counts.blocked || 0} blocked / ${counts.error || 0} failed`,
+                    hot: true
+                },
+                {
+                    value: ((counts.pending || 0) + (counts.crawling || 0)).toLocaleString(),
+                    label: "Queue load",
+                    note: `${counts.pending || 0} pending, ${counts.crawling || 0} crawling`
+                },
+                {
+                    value: (counts.done || 0).toLocaleString(),
+                    label: "Completed",
+                    note: "URLs that finished successfully"
+                },
+                {
+                    value: job.status,
+                    label: "Job state",
+                    note: formatDate(job.updated_at || job.created_at)
+                }
+            ];
+
+            document.getElementById("selected-signal-grid").innerHTML = signals.map((signal) => `
+                <article class="signal-card ${signal.hot ? "hot" : ""}">
+                    <p class="signal-label">${escapeHTML(signal.label)}</p>
+                    <p class="signal-value">${escapeHTML(signal.value)}</p>
+                    <p class="signal-note">${escapeHTML(signal.note)}</p>
+                </article>
+            `).join("");
+
+            const controls = [];
+            if (job.status === "running") {
+                controls.push(`<button class="btn btn-warning" type="button" onclick="jobAction('${job.id}', 'pause')">Pause</button>`);
+                controls.push(`<button class="btn btn-danger" type="button" onclick="jobAction('${job.id}', 'stop')">Stop</button>`);
+            }
+            if (job.status === "paused") {
+                controls.push(`<button class="btn btn-primary" type="button" onclick="jobAction('${job.id}', 'resume')">Resume</button>`);
+                controls.push(`<button class="btn btn-danger" type="button" onclick="jobAction('${job.id}', 'stop')">Stop</button>`);
+            }
+            if (job.status === "failed" || job.status === "stopped") {
+                controls.push(`<button class="btn btn-primary" type="button" onclick="jobAction('${job.id}', 'retry')">Retry</button>`);
+            }
+            controls.push(`<button class="btn btn-secondary" type="button" onclick="exportSelected('sitemap')">Sitemap</button>`);
+            document.getElementById("selected-job-controls").innerHTML = controls.join("");
+
+            document.getElementById("status-summary").innerHTML = `
+                <div class="mini"><strong>${(counts.pending || 0).toLocaleString()}</strong><span>Pending</span></div>
+                <div class="mini"><strong>${(counts.crawling || 0).toLocaleString()}</strong><span>Crawling</span></div>
+                <div class="mini"><strong>${(counts.done || 0).toLocaleString()}</strong><span>Done</span></div>
+                <div class="mini"><strong>${((counts.error || 0) + (counts.blocked || 0)).toLocaleString()}</strong><span>Incidents</span></div>
+            `;
+        }
+
+        async function selectJob(jobId) {
+            selectedJobId = jobId;
+            selectedExceptionsOffset = 0;
+            renderOverview();
+            await loadSelectedJob(jobId, true);
+        }
+
+        async function loadSelectedJob(jobId, reloadExceptions) {
+            const item = selectedOverviewItem();
+            const job = item?.job || await fetchJSON(`${API}/jobs/${jobId}`);
+            const counts = item?.counts || await fetchJSON(`${API}/jobs/${jobId}/urls`);
+            selectedJobCounts = counts || {};
+            renderSelectedJob(job, selectedJobCounts);
+            if (reloadExceptions) {
+                await loadExceptions();
+            }
+            renderGlobalStats();
+        }
+
+        async function loadExceptions() {
+            if (!selectedJobId) return;
+
+            const data = await fetchJSON(`${API}/jobs/${selectedJobId}/exceptions?limit=${EXCEPTION_PAGE_SIZE}&offset=${selectedExceptionsOffset}`);
+            const items = data.items || [];
+            const body = document.getElementById("exceptions-body");
+            body.innerHTML = "";
+
+            if (!items.length) {
+                document.getElementById("exceptions-empty").style.display = "block";
+                document.getElementById("exceptions-empty").textContent = "No blocked or failed URLs in this job.";
+                document.getElementById("exceptions-wrap").style.display = "none";
+                return;
+            }
+
+            document.getElementById("exceptions-empty").style.display = "none";
+            document.getElementById("exceptions-wrap").style.display = "block";
+
+            for (const item of items) {
+                const row = document.createElement("tr");
+                row.innerHTML = `
+                    <td><span class="${statusClass(item.status)}">${escapeHTML(item.status)}</span></td>
+                    <td class="url-cell">
+                        <a class="url-line" href="${escapeHTML(item.normalized)}" target="_blank" rel="noreferrer">${escapeHTML(item.normalized)}</a>
+                        <span class="context-line">depth ${escapeHTML(item.depth)} · found on ${escapeHTML(item.found_on || "seed")}</span>
+                    </td>
+                    <td><div class="reason">${escapeHTML(item.last_error || "No error message recorded")}</div></td>
+                    <td>${formatDate(item.updated_at)}</td>
+                `;
+                body.appendChild(row);
+            }
+
+            const totalIncidents = (selectedJobCounts.error || 0) + (selectedJobCounts.blocked || 0);
+            const page = Math.floor(selectedExceptionsOffset / EXCEPTION_PAGE_SIZE) + 1;
+            document.getElementById("exceptions-page-note").textContent = `Page ${page} · showing ${items.length} of ${totalIncidents.toLocaleString()} incidents`;
+            document.getElementById("exceptions-prev").disabled = selectedExceptionsOffset === 0;
+            document.getElementById("exceptions-next").disabled = selectedExceptionsOffset + EXCEPTION_PAGE_SIZE >= totalIncidents;
+        }
+
+        async function reloadExceptions(resetOffset) {
+            if (resetOffset) {
+                selectedExceptionsOffset = 0;
+            }
+            await loadExceptions();
+        }
+
+        async function pageExceptions(direction) {
+            const nextOffset = selectedExceptionsOffset + (direction * EXCEPTION_PAGE_SIZE);
+            if (nextOffset < 0) return;
+            selectedExceptionsOffset = nextOffset;
+            await loadExceptions();
+        }
+
+        async function jobAction(jobId, action) {
+            try {
+                await fetchJSON(`${API}/jobs/${jobId}/${action}`, { method: "POST" });
+                await refreshOverview();
+                if (selectedJobId === jobId || action === "retry") {
+                    const nextId = action === "retry" ? null : jobId;
+                    if (nextId) {
+                        await selectJob(nextId);
+                    } else {
+                        selectedJobId = null;
+                        await refreshOverview();
+                    }
+                }
+            } catch (error) {
+                window.alert(`Action failed: ${error.message}`);
+            }
+        }
+
+        function exportSelected(format) {
+            if (!selectedJobId) return;
+            window.open(`${API}/jobs/${selectedJobId}/export?format=${format}`, "_blank", "noopener");
+        }
+
+        document.getElementById("new-job-form").addEventListener("submit", async (event) => {
+            event.preventDefault();
+
+            const button = document.getElementById("create-job-button");
+            button.disabled = true;
+            button.textContent = "Starting…";
+
+            try {
+                await fetchJSON(`${API}/jobs`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        seed_url: document.getElementById("seed-url").value,
+                        config: {
+                            scope: document.getElementById("scope").value,
+                            max_depth: parseInt(document.getElementById("max-depth").value, 10),
+                            extraction: "standard",
+                            user_agent: "CrawlerDB/1.0"
+                        }
+                    })
+                });
+
+                document.getElementById("seed-url").value = "";
+                await refreshOverview();
+            } catch (error) {
+                window.alert(`Create job failed: ${error.message}`);
+            } finally {
+                button.disabled = false;
+                button.textContent = "Start new crawl";
+            }
         });
 
-        // Init
         connectSSE();
-        refreshJobs();
-        setInterval(refreshJobs, 5000);
+        refreshOverview().catch((error) => {
+            addEvent({ type: "startup.error", payload: { message: error.message } });
+        });
+        window.setInterval(() => refreshOverview().catch(() => {}), 15000);
     </script>
 </body>
 </html>

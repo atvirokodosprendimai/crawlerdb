@@ -27,6 +27,7 @@ type CrawlURL struct {
 	Depth      int       `json:"depth"`
 	Status     URLStatus `json:"status"`
 	RetryCount int       `json:"retry_count"`
+	LastError  string    `json:"last_error,omitempty"`
 	RevisitAt  time.Time `json:"revisit_at,omitzero"`
 	FoundOn    string    `json:"found_on,omitempty"`
 	CreatedAt  time.Time `json:"created_at"`

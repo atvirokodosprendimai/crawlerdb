@@ -54,6 +54,13 @@ func NewWorkerService(
 
 // ProcessTask handles a single crawl task.
 func (w *WorkerService) ProcessTask(ctx context.Context, task CrawlTask) *entities.CrawlResult {
+	w.logger.Debug("process task",
+		"job_id", task.JobID,
+		"url_id", task.URLID,
+		"url", task.URL,
+		"depth", task.Depth,
+	)
+
 	crawlURL := &entities.CrawlURL{
 		ID:         task.URLID,
 		JobID:      task.JobID,
@@ -72,26 +79,48 @@ func (w *WorkerService) ProcessTask(ctx context.Context, task CrawlTask) *entiti
 		w.logger.Warn("robots check failed", "url", task.URL, "err", err)
 	}
 	if !allowed {
+		w.logger.Debug("robots blocked url", "url", task.URL)
 		result.Error = "blocked by robots.txt"
 		return result
 	}
+	w.logger.Debug("robots allowed url", "url", task.URL)
 
 	// Rate limit.
 	domain := extractHost(task.URL)
+	waitStart := time.Now()
 	if err := w.rateLimiter.Wait(ctx, domain); err != nil {
 		result.Error = fmt.Sprintf("rate limit wait: %v", err)
 		return result
 	}
+	w.logger.Debug("rate limiter granted",
+		"url", task.URL,
+		"domain", domain,
+		"wait_ms", time.Since(waitStart).Milliseconds(),
+	)
 
 	// Fetch.
 	start := time.Now()
+	w.logger.Debug("fetch start", "url", task.URL, "domain", domain)
 	resp, err := w.fetcher.Fetch(ctx, task.URL)
 	fetchDuration := time.Since(start)
 	if err != nil {
 		result.Error = fmt.Sprintf("fetch: %v", err)
 		w.rateLimiter.RecordResponse(domain, 0, fetchDuration)
+		w.logger.Debug("fetch failed",
+			"url", task.URL,
+			"domain", domain,
+			"duration_ms", fetchDuration.Milliseconds(),
+			"err", err,
+		)
 		return result
 	}
+	w.logger.Debug("fetch complete",
+		"url", task.URL,
+		"final_url", resp.URL,
+		"status", resp.StatusCode,
+		"content_type", resp.ContentType,
+		"duration_ms", fetchDuration.Milliseconds(),
+	)
 
 	// Record response for adaptive rate limiting.
 	w.rateLimiter.RecordResponse(domain, resp.StatusCode, fetchDuration)
@@ -102,6 +131,10 @@ func (w *WorkerService) ProcessTask(ctx context.Context, task CrawlTask) *entiti
 		result.Error = fmt.Sprintf("read body: %v", err)
 		return result
 	}
+	w.logger.Debug("body read",
+		"url", task.URL,
+		"bytes", len(body),
+	)
 
 	// Anti-bot detection.
 	if w.detector != nil {
@@ -126,10 +159,21 @@ func (w *WorkerService) ProcessTask(ctx context.Context, task CrawlTask) *entiti
 	// Extract content.
 	profile := valueobj.ExtractionProfile{Level: task.Config.Extraction}
 	page := w.extractor.Extract(resp, body, task.URLID, task.JobID, task.URL, task.SeedHost, profile, fetchDuration)
+	w.logger.Debug("extraction complete",
+		"url", task.URL,
+		"title", page.Title,
+		"links", len(page.Links),
+		"http_status", page.HTTPStatus,
+		"content_type", page.ContentType,
+	)
 
 	result.Page = page
 	result.DiscoveredURLs = page.Links
 	result.Success = true
+	w.logger.Debug("task success",
+		"url", task.URL,
+		"discovered_urls", len(result.DiscoveredURLs),
+	)
 
 	return result
 }
@@ -173,4 +217,3 @@ func (w *WorkerService) Run(ctx context.Context, jobIDs []string) error {
 	wg.Wait()
 	return ctx.Err()
 }
-

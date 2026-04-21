@@ -6,14 +6,14 @@ import (
 
 // JobModel is the GORM model for the jobs table.
 type JobModel struct {
-	ID         string    `gorm:"primaryKey;column:id"`
-	SeedURL    string    `gorm:"column:seed_url;not null"`
-	Config     string    `gorm:"column:config;not null"`
-	Status     string    `gorm:"column:status;not null;default:pending"`
-	Stats      string    `gorm:"column:stats;default:'{}'"`
-	Error      string    `gorm:"column:error;default:''"`
-	CreatedAt  time.Time `gorm:"column:created_at;not null"`
-	UpdatedAt  time.Time `gorm:"column:updated_at;not null"`
+	ID         string     `gorm:"primaryKey;column:id"`
+	SeedURL    string     `gorm:"column:seed_url;not null"`
+	Config     string     `gorm:"column:config;not null"`
+	Status     string     `gorm:"column:status;not null;default:pending"`
+	Stats      string     `gorm:"column:stats;default:'{}'"`
+	Error      string     `gorm:"column:error;default:''"`
+	CreatedAt  time.Time  `gorm:"column:created_at;not null"`
+	UpdatedAt  time.Time  `gorm:"column:updated_at;not null"`
 	StartedAt  *time.Time `gorm:"column:started_at"`
 	FinishedAt *time.Time `gorm:"column:finished_at"`
 }
@@ -30,6 +30,7 @@ type URLModel struct {
 	Depth      int        `gorm:"column:depth;not null;default:0"`
 	Status     string     `gorm:"column:status;not null;default:pending"`
 	RetryCount int        `gorm:"column:retry_count;not null;default:0"`
+	LastError  string     `gorm:"column:last_error;default:''"`
 	RevisitAt  *time.Time `gorm:"column:revisit_at"`
 	FoundOn    string     `gorm:"column:found_on;default:''"`
 	CreatedAt  time.Time  `gorm:"column:created_at;not null"`
@@ -45,6 +46,8 @@ type PageModel struct {
 	JobID          string    `gorm:"column:job_id;not null"`
 	HTTPStatus     int       `gorm:"column:http_status"`
 	ContentType    string    `gorm:"column:content_type;default:''"`
+	ContentPath    string    `gorm:"column:content_path;default:''"`
+	ContentSize    int64     `gorm:"column:content_size;default:0"`
 	Headers        string    `gorm:"column:headers;default:'{}'"`
 	Title          string    `gorm:"column:title;default:''"`
 	MetaTags       string    `gorm:"column:meta_tags;default:'{}'"`

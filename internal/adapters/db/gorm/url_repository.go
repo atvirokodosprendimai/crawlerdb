@@ -82,8 +82,27 @@ func (r *URLRepository) Claim(ctx context.Context, jobID string, limit int) ([]*
 }
 
 func (r *URLRepository) Complete(ctx context.Context, url *entities.CrawlURL) error {
-	m := urlToModel(url)
-	return r.db.WithContext(ctx).Save(m).Error
+	updates := map[string]any{
+		"status":      string(url.Status),
+		"retry_count": url.RetryCount,
+		"last_error":  url.LastError,
+		"updated_at":  url.UpdatedAt,
+	}
+	if !url.RevisitAt.IsZero() {
+		updates["revisit_at"] = url.RevisitAt
+	}
+
+	result := r.db.WithContext(ctx).
+		Model(&URLModel{}).
+		Where("id = ?", url.ID).
+		Updates(updates)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
 }
 
 func (r *URLRepository) FindByHash(ctx context.Context, jobID, urlHash string) (*entities.CrawlURL, error) {
@@ -122,6 +141,33 @@ func (r *URLRepository) FindByJobID(ctx context.Context, jobID string, limit, of
 		Find(&models).Error; err != nil {
 		return nil, err
 	}
+	result := make([]*entities.CrawlURL, len(models))
+	for i, m := range models {
+		result[i] = modelToURL(&m)
+	}
+	return result, nil
+}
+
+func (r *URLRepository) FindByJobIDAndStatuses(ctx context.Context, jobID string, statuses []entities.URLStatus, limit, offset int) ([]*entities.CrawlURL, error) {
+	if len(statuses) == 0 {
+		return nil, nil
+	}
+
+	statusVals := make([]string, len(statuses))
+	for i, status := range statuses {
+		statusVals[i] = string(status)
+	}
+
+	var models []URLModel
+	if err := r.db.WithContext(ctx).
+		Where("job_id = ? AND status IN ?", jobID, statusVals).
+		Order("updated_at DESC, created_at DESC").
+		Limit(limit).
+		Offset(offset).
+		Find(&models).Error; err != nil {
+		return nil, err
+	}
+
 	result := make([]*entities.CrawlURL, len(models))
 	for i, m := range models {
 		result[i] = modelToURL(&m)

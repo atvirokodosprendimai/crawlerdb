@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"flag"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -24,7 +25,10 @@ import (
 )
 
 func main() {
-	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	debug := flag.Bool("debug", false, "enable debug logging")
+	flag.Parse()
+
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: logLevel(*debug)}))
 
 	// Load config.
 	cfg := config.LoadDefault()
@@ -117,6 +121,13 @@ func main() {
 			logger.Error("unmarshal task", "err", err)
 			return
 		}
+		logger.Debug("task received",
+			"job_id", task.JobID,
+			"url_id", task.URLID,
+			"url", task.URL,
+			"depth", task.Depth,
+			"seed_host", task.SeedHost,
+		)
 
 		// Check if this domain is assigned to us.
 		taskDomain := extractDomain(task.URL)
@@ -133,6 +144,12 @@ func main() {
 			existing, _ := domainRepo.FindByDomain(ctx, task.JobID, taskDomain)
 			if existing != nil && existing.WorkerID != identity.ID() {
 				// Another worker has this domain. Skip.
+				logger.Debug("skip task for foreign domain assignment",
+					"domain", taskDomain,
+					"job_id", task.JobID,
+					"owner_worker_id", existing.WorkerID,
+					"url", task.URL,
+				)
 				return
 			}
 			if existing == nil {
@@ -156,9 +173,22 @@ func main() {
 			defer func() { <-sem }()
 
 			result := workerSvc.ProcessTask(ctx, task)
+			logger.Debug("task processed",
+				"job_id", task.JobID,
+				"url_id", task.URLID,
+				"url", task.URL,
+				"success", result.Success,
+				"error", result.Error,
+				"discovered_urls", len(result.DiscoveredURLs),
+			)
 
 			resultData, _ := json.Marshal(result)
 			_ = mb.Publish(ctx, broker.CrawlResultSubject(task.JobID), resultData)
+			logger.Debug("result published",
+				"job_id", task.JobID,
+				"subject", broker.CrawlResultSubject(task.JobID),
+				"url", task.URL,
+			)
 		}()
 	})
 
@@ -210,6 +240,13 @@ func main() {
 
 	wg.Wait()
 	logger.Info("crawler stopped")
+}
+
+func logLevel(debug bool) slog.Level {
+	if debug {
+		return slog.LevelDebug
+	}
+	return slog.LevelInfo
 }
 
 func assignmentDomains(assignments []*entities.DomainAssignment) []string {

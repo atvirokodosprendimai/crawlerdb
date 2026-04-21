@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/atvirokodosprendimai/crawlerdb/internal/domain/entities"
 	broker "github.com/atvirokodosprendimai/crawlerdb/internal/adapters/nats"
+	"github.com/atvirokodosprendimai/crawlerdb/internal/domain/entities"
 	"github.com/atvirokodosprendimai/crawlerdb/internal/domain/events"
 	"github.com/atvirokodosprendimai/crawlerdb/internal/domain/ports"
 	"github.com/atvirokodosprendimai/crawlerdb/internal/domain/valueobj"
@@ -101,6 +101,26 @@ func (s *JobService) GetJob(ctx context.Context, jobID string) (*entities.Job, e
 // ListJobs returns all jobs with pagination.
 func (s *JobService) ListJobs(ctx context.Context, limit, offset int) ([]*entities.Job, error) {
 	return s.jobRepo.List(ctx, limit, offset)
+}
+
+// RetryJob creates a fresh job from a failed or stopped job's seed URL and config.
+func (s *JobService) RetryJob(ctx context.Context, jobID string) (*entities.Job, error) {
+	job, err := s.jobRepo.FindByID(ctx, jobID)
+	if err != nil {
+		return nil, fmt.Errorf("find job: %w", err)
+	}
+	if job == nil {
+		return nil, fmt.Errorf("job %s not found", jobID)
+	}
+	if job.Status != entities.JobStatusFailed && job.Status != entities.JobStatusStopped {
+		return nil, fmt.Errorf("job %s is not retryable from status %s", jobID, job.Status)
+	}
+
+	retryJob, err := s.CreateJob(ctx, job.SeedURL, job.Config)
+	if err != nil {
+		return nil, err
+	}
+	return retryJob, nil
 }
 
 func (s *JobService) transitionJob(ctx context.Context, jobID string, transition func(*entities.Job) error) error {

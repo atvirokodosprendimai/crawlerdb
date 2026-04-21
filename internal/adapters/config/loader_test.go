@@ -15,7 +15,8 @@ func TestLoadDefault(t *testing.T) {
 	assert.Equal(t, "nats://localhost:4222", cfg.NATS.URL)
 	assert.Equal(t, "crawlerdb.sqlite", cfg.Database.Path)
 	assert.Equal(t, 10, cfg.Crawler.PoolSize)
-	assert.Equal(t, ":8080", cfg.Server.Addr)
+	assert.Equal(t, "data", cfg.Crawler.ContentDir)
+	assert.Equal(t, ":8081", cfg.Server.Addr)
 }
 
 func TestLoadFromFile(t *testing.T) {

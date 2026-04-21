@@ -11,8 +11,8 @@ import (
 
 	"github.com/atvirokodosprendimai/crawlerdb/internal/adapters/config"
 	store "github.com/atvirokodosprendimai/crawlerdb/internal/adapters/db/gorm"
-	broker "github.com/atvirokodosprendimai/crawlerdb/internal/adapters/nats"
 	"github.com/atvirokodosprendimai/crawlerdb/internal/adapters/gui"
+	broker "github.com/atvirokodosprendimai/crawlerdb/internal/adapters/nats"
 	"github.com/nats-io/nats.go"
 )
 
@@ -33,6 +33,12 @@ func main() {
 		logger.Error("open database", "err", err)
 		os.Exit(1)
 	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		logger.Error("get sql.DB", "err", err)
+		os.Exit(1)
+	}
+	defer sqlDB.Close()
 
 	// Connect to NATS.
 	nc, err := nats.Connect(cfg.NATS.URL,
@@ -53,6 +59,11 @@ func main() {
 		Addr:    cfg.Server.Addr,
 		Handler: router,
 	}
+	srv.RegisterOnShutdown(func() {
+		if err := router.Close(); err != nil {
+			logger.Warn("close gui router", "err", err)
+		}
+	})
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
@@ -69,5 +80,8 @@ func main() {
 
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer shutdownCancel()
-	_ = srv.Shutdown(shutdownCtx)
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		logger.Warn("graceful shutdown timed out, forcing close", "err", err)
+		_ = srv.Close()
+	}
 }

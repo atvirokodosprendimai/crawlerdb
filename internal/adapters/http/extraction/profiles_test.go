@@ -96,3 +96,24 @@ func TestExtract_LinksClassification(t *testing.T) {
 	assert.Equal(t, 1, internal)
 	assert.Equal(t, 1, external)
 }
+
+func TestExtract_NonHTMLPreservesRawContentWithoutHTMLExtraction(t *testing.T) {
+	ext := extraction.NewExtractor()
+	resp := &ports.FetchResponse{
+		StatusCode:  200,
+		ContentType: "application/pdf",
+		Headers:     http.Header{"Content-Type": {"application/pdf"}},
+		URL:         "https://example.com/file.pdf",
+	}
+	body := []byte("%PDF-1.4 test")
+
+	profile := valueobj.ExtractionProfile{Level: valueobj.ExtractionFull}
+	page := ext.Extract(resp, body, "url1", "job1", "https://example.com/file.pdf", "example.com", profile, 0)
+
+	assert.Equal(t, body, page.RawContent)
+	assert.Empty(t, page.Title)
+	assert.Empty(t, page.MetaTags)
+	assert.Empty(t, page.Links)
+	assert.Empty(t, page.HTMLBody)
+	assert.Empty(t, page.TextContent)
+}

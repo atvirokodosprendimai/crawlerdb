@@ -4,10 +4,10 @@ import "time"
 
 // AppConfig is the top-level application configuration.
 type AppConfig struct {
-	NATS     NATSConfig     `toml:"nats"`
-	Database DatabaseConfig `toml:"database"`
+	NATS     NATSConfig      `toml:"nats"`
+	Database DatabaseConfig  `toml:"database"`
 	Crawler  CrawlerDefaults `toml:"crawler"`
-	Server   ServerConfig   `toml:"server"`
+	Server   ServerConfig    `toml:"server"`
 }
 
 // NATSConfig holds NATS connection settings.
@@ -25,17 +25,18 @@ type DatabaseConfig struct {
 
 // CrawlerDefaults holds default crawler settings.
 type CrawlerDefaults struct {
-	UserAgent          string   `toml:"user_agent"`
-	MaxDepth           int      `toml:"max_depth"`
-	PoolSize           int      `toml:"pool_size"`
-	RequestTimeout     Duration `toml:"request_timeout"`
-	DefaultRateLimit   Duration `toml:"default_rate_limit"`
-	MaxRetries         int      `toml:"max_retries"`
-	RobotsTTL          Duration `toml:"robots_ttl"`
-	HeartbeatInterval  Duration `toml:"heartbeat_interval"`
-	HeartbeatTTL       Duration `toml:"heartbeat_ttl"`
-	DomainConcurrency  int      `toml:"domain_concurrency"`
-	DataDir            string   `toml:"data_dir"`
+	UserAgent         string   `toml:"user_agent"`
+	MaxDepth          int      `toml:"max_depth"`
+	PoolSize          int      `toml:"pool_size"`
+	RequestTimeout    Duration `toml:"request_timeout"`
+	DefaultRateLimit  Duration `toml:"default_rate_limit"`
+	MaxRetries        int      `toml:"max_retries"`
+	RobotsTTL         Duration `toml:"robots_ttl"`
+	HeartbeatInterval Duration `toml:"heartbeat_interval"`
+	HeartbeatTTL      Duration `toml:"heartbeat_ttl"`
+	DomainConcurrency int      `toml:"domain_concurrency"`
+	DataDir           string   `toml:"data_dir"`
+	ContentDir        string   `toml:"content_dir"`
 }
 
 // ServerConfig holds GUI HTTP server settings.
@@ -67,9 +68,10 @@ func DefaultAppConfig() AppConfig {
 			HeartbeatTTL:      Duration{15 * time.Second},
 			DomainConcurrency: 2,
 			DataDir:           ".crawlerdb",
+			ContentDir:        "data",
 		},
 		Server: ServerConfig{
-			Addr: ":8080",
+			Addr: ":8081",
 		},
 	}
 }

@@ -3,6 +3,7 @@ package extraction
 import (
 	"encoding/json"
 	"io"
+	"mime"
 	"strings"
 	"time"
 
@@ -37,6 +38,7 @@ func (e *Extractor) Extract(
 	page.ContentType = resp.ContentType
 	page.FetchDuration = duration
 	page.FetchedAt = time.Now().UTC()
+	page.RawContent = append([]byte(nil), body...)
 
 	// Extract headers.
 	headers := make(map[string]string)
@@ -47,33 +49,48 @@ func (e *Extractor) Extract(
 	}
 	page.Headers = headers
 
-	// Always extract title and meta (even minimal).
-	reader := strings.NewReader(string(body))
-	page.Title = fetcher.ExtractTitle(reader)
+	if isHTMLContentType(resp.ContentType) {
+		// Always extract title and meta from HTML responses.
+		reader := strings.NewReader(string(body))
+		page.Title = fetcher.ExtractTitle(reader)
 
-	reader.Reset(string(body))
-	page.MetaTags = fetcher.ExtractMetaTags(reader)
-
-	// Always extract links.
-	reader.Reset(string(body))
-	page.Links = e.linkExtractor.ExtractLinks(reader, pageURL, seedHost)
-
-	// Standard: include HTML body.
-	if profile.IncludesHTML() {
-		page.HTMLBody = string(body)
-	}
-
-	// Full: include text content and structured data.
-	if profile.IncludesText() {
 		reader.Reset(string(body))
-		page.TextContent = fetcher.ExtractText(reader)
-	}
+		page.MetaTags = fetcher.ExtractMetaTags(reader)
 
-	if profile.IncludesStructuredData() {
-		page.StructuredData = extractStructuredData(body)
+		// Always extract links from HTML responses.
+		reader.Reset(string(body))
+		page.Links = e.linkExtractor.ExtractLinks(reader, pageURL, seedHost)
+
+		// Standard: include HTML body in-memory for downstream storage.
+		if profile.IncludesHTML() {
+			page.HTMLBody = string(body)
+		}
+
+		// Full: include text content and structured data.
+		if profile.IncludesText() {
+			reader.Reset(string(body))
+			page.TextContent = fetcher.ExtractText(reader)
+		}
+
+		if profile.IncludesStructuredData() {
+			page.StructuredData = extractStructuredData(body)
+		}
 	}
 
 	return page
+}
+
+func isHTMLContentType(contentType string) bool {
+	mediaType, _, err := mime.ParseMediaType(contentType)
+	if err != nil {
+		return false
+	}
+	switch strings.ToLower(mediaType) {
+	case "text/html", "application/xhtml+xml":
+		return true
+	default:
+		return false
+	}
 }
 
 // extractStructuredData finds JSON-LD blocks in HTML.

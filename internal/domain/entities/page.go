@@ -13,6 +13,8 @@ type Page struct {
 	JobID          string            `json:"job_id"`
 	HTTPStatus     int               `json:"http_status"`
 	ContentType    string            `json:"content_type"`
+	ContentPath    string            `json:"content_path,omitempty"`
+	ContentSize    int64             `json:"content_size,omitempty"`
 	Headers        map[string]string `json:"headers"`
 	Title          string            `json:"title"`
 	MetaTags       map[string]string `json:"meta_tags"`
@@ -20,6 +22,7 @@ type Page struct {
 	TextContent    string            `json:"text_content,omitempty"`
 	StructuredData []any             `json:"structured_data,omitempty"`
 	Links          []DiscoveredLink  `json:"links"`
+	RawContent     []byte            `json:"-"`
 	FetchDuration  time.Duration     `json:"fetch_duration"`
 	FetchedAt      time.Time         `json:"fetched_at"`
 	CreatedAt      time.Time         `json:"created_at"`
@@ -48,11 +51,11 @@ func NewPage(urlID, jobID string) *Page {
 
 // CrawlResult wraps the outcome of crawling a single URL.
 type CrawlResult struct {
-	URL            *CrawlURL        `json:"url"`
-	Page           *Page            `json:"page"`
+	URL            *CrawlURL         `json:"url"`
+	Page           *Page             `json:"page"`
 	DiscoveredURLs []DiscoveredLink  `json:"discovered_urls"`
-	Error          string           `json:"error,omitempty"`
-	Success        bool             `json:"success"`
+	Error          string            `json:"error,omitempty"`
+	Success        bool              `json:"success"`
 	AntiBotEvent   *AntiBotDetection `json:"antibot_event,omitempty"`
 }
 

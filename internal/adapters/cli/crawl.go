@@ -52,7 +52,7 @@ func crawlCommand() *cli.Command {
 					}
 
 					req := struct {
-						SeedURL string              `json:"seed_url"`
+						SeedURL string               `json:"seed_url"`
 						Config  valueobj.CrawlConfig `json:"config"`
 					}{
 						SeedURL: cmd.String("url"),
@@ -118,6 +118,16 @@ func crawlCommand() *cli.Command {
 				},
 				Action: func(ctx context.Context, cmd *cli.Command) error {
 					return jobCommand(ctx, cmd, "job.resume")
+				},
+			},
+			{
+				Name:  "retry",
+				Usage: "Retry a failed or stopped crawl job",
+				Flags: []cli.Flag{
+					&cli.StringFlag{Name: "job", Usage: "Job ID", Required: true},
+				},
+				Action: func(ctx context.Context, cmd *cli.Command) error {
+					return jobCommand(ctx, cmd, "job.retry")
 				},
 			},
 			{

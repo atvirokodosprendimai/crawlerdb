@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -122,6 +123,28 @@ func TestJobService_ListJobs(t *testing.T) {
 	assert.Len(t, jobs, 3)
 }
 
+func TestJobService_RetryJob(t *testing.T) {
+	db := setupTestDB(t)
+	b := setupTestNATS(t)
+	jobRepo := store.NewJobRepository(db)
+	urlRepo := store.NewURLRepository(db)
+	svc := services.NewJobService(jobRepo, urlRepo, b)
+	ctx := context.Background()
+
+	job, err := svc.CreateJob(ctx, "https://example.com", testConfig())
+	require.NoError(t, err)
+	require.NoError(t, svc.StartJob(ctx, job.ID))
+	require.NoError(t, svc.StopJob(ctx, job.ID))
+
+	retried, err := svc.RetryJob(ctx, job.ID)
+	require.NoError(t, err)
+	require.NotNil(t, retried)
+	assert.NotEqual(t, job.ID, retried.ID)
+	assert.Equal(t, job.SeedURL, retried.SeedURL)
+	assert.Equal(t, job.Config, retried.Config)
+	assert.Equal(t, entities.JobStatusPending, retried.Status)
+}
+
 // --- CrawlService Tests ---
 
 func TestCrawlService_EnqueueAndDispatch(t *testing.T) {
@@ -129,7 +152,7 @@ func TestCrawlService_EnqueueAndDispatch(t *testing.T) {
 	b := setupTestNATS(t)
 	jobRepo := store.NewJobRepository(db)
 	urlRepo := store.NewURLRepository(db)
-	pageRepo := store.NewPageRepository(db)
+	pageRepo := store.NewPageRepository(db, store.WithContentDir(filepath.Join(t.TempDir(), "data")))
 	crawlSvc := services.NewCrawlService(jobRepo, urlRepo, pageRepo, b)
 	jobSvc := services.NewJobService(jobRepo, urlRepo, b)
 	ctx := context.Background()
@@ -166,7 +189,7 @@ func TestCrawlService_ProcessResult(t *testing.T) {
 	b := setupTestNATS(t)
 	jobRepo := store.NewJobRepository(db)
 	urlRepo := store.NewURLRepository(db)
-	pageRepo := store.NewPageRepository(db)
+	pageRepo := store.NewPageRepository(db, store.WithContentDir(filepath.Join(t.TempDir(), "data")))
 	crawlSvc := services.NewCrawlService(jobRepo, urlRepo, pageRepo, b)
 	jobSvc := services.NewJobService(jobRepo, urlRepo, b)
 	ctx := context.Background()
@@ -184,6 +207,8 @@ func TestCrawlService_ProcessResult(t *testing.T) {
 	// Simulate crawl result.
 	page := entities.NewPage(claimed[0].ID, job.ID)
 	page.HTTPStatus = 200
+	page.ContentType = "text/html"
+	page.RawContent = []byte("<html><body>ok</body></html>")
 	page.FetchedAt = time.Now().UTC()
 
 	result := &entities.CrawlResult{
@@ -218,7 +243,7 @@ func TestCrawlService_CheckCompletion(t *testing.T) {
 	b := setupTestNATS(t)
 	jobRepo := store.NewJobRepository(db)
 	urlRepo := store.NewURLRepository(db)
-	pageRepo := store.NewPageRepository(db)
+	pageRepo := store.NewPageRepository(db, store.WithContentDir(filepath.Join(t.TempDir(), "data")))
 	crawlSvc := services.NewCrawlService(jobRepo, urlRepo, pageRepo, b)
 	ctx := context.Background()
 
