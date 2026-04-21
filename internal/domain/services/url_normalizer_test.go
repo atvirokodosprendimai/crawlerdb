@@ -31,6 +31,8 @@ func TestNormalize(t *testing.T) {
 		{"empty query string stripped", "https://example.com/page?", "", "https://example.com/page"},
 		{"decode unnecessary encoding", "https://example.com/%7Euser", "", "https://example.com/~user"},
 		{"scheme lowercase", "HTTP://example.com/page", "", "http://example.com/page"},
+		{"repair malformed http scheme", "HTTP//example.com/file.pdf", "", "http://example.com/file.pdf"},
+		{"repair malformed https scheme", "HTTPS//example.com/file.pdf", "", "https://example.com/file.pdf"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

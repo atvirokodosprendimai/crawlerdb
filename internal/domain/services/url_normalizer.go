@@ -21,6 +21,9 @@ func NewURLNormalizer() *URLNormalizer {
 // Normalize normalizes a URL and returns the result with SHA-256 hash.
 // If base is non-empty, relative URLs are resolved against it.
 func (n *URLNormalizer) Normalize(rawURL, base string) (valueobj.NormalizedURL, error) {
+	rawURL = sanitizeRawURL(rawURL)
+	base = sanitizeRawURL(base)
+
 	var parsed *url.URL
 	var err error
 
@@ -115,6 +118,21 @@ func (n *URLNormalizer) Normalize(rawURL, base string) (valueobj.NormalizedURL, 
 		Normalized: normalized,
 		Hash:       hash,
 	}, nil
+}
+
+func sanitizeRawURL(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return trimmed
+	}
+	lower := strings.ToLower(trimmed)
+	for _, scheme := range []string{"http", "https"} {
+		prefix := scheme + "//"
+		if strings.HasPrefix(lower, prefix) {
+			return scheme + ":" + trimmed[len(scheme):]
+		}
+	}
+	return trimmed
 }
 
 // IsInternal checks if a URL belongs to the exact same host.

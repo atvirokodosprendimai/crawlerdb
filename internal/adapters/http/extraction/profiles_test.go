@@ -1,12 +1,14 @@
 package extraction_test
 
 import (
+	"bytes"
 	"net/http"
 	"testing"
 
 	"github.com/atvirokodosprendimai/crawlerdb/internal/adapters/http/extraction"
 	"github.com/atvirokodosprendimai/crawlerdb/internal/domain/ports"
 	"github.com/atvirokodosprendimai/crawlerdb/internal/domain/valueobj"
+	"github.com/jung-kurt/gofpdf"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -116,6 +118,28 @@ func TestExtract_NonHTMLPreservesRawContentWithoutHTMLExtraction(t *testing.T) {
 	assert.Empty(t, page.Links)
 	assert.Empty(t, page.HTMLBody)
 	assert.Empty(t, page.TextContent)
+}
+
+func TestExtract_PDFStoresSearchableText(t *testing.T) {
+	ext := extraction.NewExtractor()
+	resp := &ports.FetchResponse{
+		StatusCode:  200,
+		ContentType: "application/pdf",
+		Headers:     http.Header{"Content-Type": {"application/pdf"}},
+		URL:         "https://example.com/file.pdf",
+	}
+
+	pdfDoc := gofpdf.New("P", "mm", "A4", "")
+	pdfDoc.AddPage()
+	pdfDoc.SetFont("Arial", "", 12)
+	pdfDoc.Cell(40, 10, "Invoice 123")
+	var buf bytes.Buffer
+	assert.NoError(t, pdfDoc.Output(&buf))
+
+	page := ext.Extract(resp, buf.Bytes(), "url1", "job1", "https://example.com/file.pdf", "example.com", valueobj.ExtractionProfile{Level: valueobj.ExtractionMinimal}, 0)
+
+	assert.Contains(t, page.TextContent, "Invoice 123")
+	assert.Equal(t, buf.Bytes(), page.RawContent)
 }
 
 func TestExtract_NonHTMLTextStoresSearchableText(t *testing.T) {

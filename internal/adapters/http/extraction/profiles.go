@@ -1,6 +1,7 @@
 package extraction
 
 import (
+	"bytes"
 	"encoding/json"
 	"io"
 	"mime"
@@ -11,6 +12,7 @@ import (
 	"github.com/atvirokodosprendimai/crawlerdb/internal/domain/entities"
 	"github.com/atvirokodosprendimai/crawlerdb/internal/domain/ports"
 	"github.com/atvirokodosprendimai/crawlerdb/internal/domain/valueobj"
+	"github.com/ledongthuc/pdf"
 )
 
 // Extractor processes an HTTP response into a Page entity.
@@ -89,11 +91,29 @@ func ExtractSearchText(contentType string, body []byte) string {
 		return normalizeSearchText(string(body))
 	}
 	switch mediaType {
+	case "application/pdf":
+		return extractPDFSearchText(body)
 	case "application/json", "application/xml", "application/javascript", "application/x-javascript", "application/csv":
 		return normalizeSearchText(string(body))
 	default:
 		return ""
 	}
+}
+
+func extractPDFSearchText(body []byte) string {
+	reader, err := pdf.NewReader(bytes.NewReader(body), int64(len(body)))
+	if err != nil {
+		return ""
+	}
+	textReader, err := reader.GetPlainText()
+	if err != nil {
+		return ""
+	}
+	text, err := io.ReadAll(textReader)
+	if err != nil {
+		return ""
+	}
+	return normalizeSearchText(string(text))
 }
 
 func normalizeSearchText(value string) string {
