@@ -6,16 +6,17 @@ import (
 
 // JobModel is the GORM model for the jobs table.
 type JobModel struct {
-	ID         string     `gorm:"primaryKey;column:id"`
-	SeedURL    string     `gorm:"column:seed_url;not null"`
-	Config     string     `gorm:"column:config;not null"`
-	Status     string     `gorm:"column:status;not null;default:pending"`
-	Stats      string     `gorm:"column:stats;default:'{}'"`
-	Error      string     `gorm:"column:error;default:''"`
-	CreatedAt  time.Time  `gorm:"column:created_at;not null"`
-	UpdatedAt  time.Time  `gorm:"column:updated_at;not null"`
-	StartedAt  *time.Time `gorm:"column:started_at"`
-	FinishedAt *time.Time `gorm:"column:finished_at"`
+	ID             string     `gorm:"primaryKey;column:id"`
+	SeedURL        string     `gorm:"column:seed_url;not null"`
+	Config         string     `gorm:"column:config;not null"`
+	Status         string     `gorm:"column:status;not null;default:pending"`
+	Stats          string     `gorm:"column:stats;default:'{}'"`
+	Error          string     `gorm:"column:error;default:''"`
+	DeleteMarkedAt *time.Time `gorm:"column:delete_marked_at"`
+	CreatedAt      time.Time  `gorm:"column:created_at;not null"`
+	UpdatedAt      time.Time  `gorm:"column:updated_at;not null"`
+	StartedAt      *time.Time `gorm:"column:started_at"`
+	FinishedAt     *time.Time `gorm:"column:finished_at"`
 }
 
 func (JobModel) TableName() string { return "jobs" }

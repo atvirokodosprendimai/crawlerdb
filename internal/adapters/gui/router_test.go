@@ -224,7 +224,7 @@ func TestRouter_JobSettingsPageAndUpdate(t *testing.T) {
 	assert.Equal(t, "TestBot/2.0", updated.Config.UserAgent)
 }
 
-func TestRouter_DeleteSiteRemovesJobDataAndFiles(t *testing.T) {
+func TestRouter_DeleteSiteMarksJobForSweep(t *testing.T) {
 	router, db := setupTestRouter(t)
 	ctx := t.Context()
 
@@ -266,19 +266,20 @@ func TestRouter_DeleteSiteRemovesJobDataAndFiles(t *testing.T) {
 
 	foundJob, err := jobRepo.FindByID(ctx, job.ID)
 	require.NoError(t, err)
-	assert.Nil(t, foundJob)
+	require.NotNil(t, foundJob)
+	assert.Equal(t, entities.JobStatusStopped, foundJob.Status)
+	assert.False(t, foundJob.DeleteMarkedAt.IsZero())
 
 	pages, err := pageRepo.FindByJobID(ctx, job.ID, 10, 0)
 	require.NoError(t, err)
-	assert.Len(t, pages, 0)
+	assert.Len(t, pages, 1)
 
 	urls, err := urlRepo.FindByJobID(ctx, job.ID, 10, 0)
 	require.NoError(t, err)
-	assert.Len(t, urls, 0)
+	assert.Len(t, urls, 1)
 
 	_, err = os.Stat(storedPage.ContentPath)
-	assert.Error(t, err)
-	assert.True(t, os.IsNotExist(err))
+	require.NoError(t, err)
 
 	var antibotCount int64
 	require.NoError(t, db.Table("antibot_events").Where("job_id = ?", job.ID).Count(&antibotCount).Error)

@@ -438,37 +438,46 @@ func buildSelectedView(job *entities.Job, counts map[string]int) *dashboardSelec
 	}
 	controls = append(controls,
 		dashboardControl{Label: "Dedupe URLs", Class: "btn btn-secondary", Action: jobActionExpr(job.ID, "dedupe")},
-		dashboardControl{Label: "Delete Site", Class: "btn btn-danger", Action: jobActionExpr(job.ID, "delete")},
+		dashboardControl{Label: "Mark Delete", Class: "btn btn-danger", Action: jobActionExpr(job.ID, "delete")},
 	)
+	signalCards := []dashboardSignalCard{
+		{
+			Value: formatNumber(counts["error"] + counts["blocked"]),
+			Label: "Open incidents",
+			Note:  fmt.Sprintf("%d blocked / %d failed", counts["blocked"], counts["error"]),
+			Hot:   true,
+		},
+		{
+			Value: formatNumber(counts["pending"] + counts["crawling"]),
+			Label: "Queue load",
+			Note:  fmt.Sprintf("%d pending, %d crawling", counts["pending"], counts["crawling"]),
+		},
+		{
+			Value: formatNumber(counts["done"]),
+			Label: "Completed",
+			Note:  "URLs that finished successfully",
+		},
+		{
+			Value: string(job.Status),
+			Label: "Job state",
+			Note:  formatDateTime(job.UpdatedAt),
+		},
+	}
+	if !job.DeleteMarkedAt.IsZero() {
+		signalCards = append(signalCards, dashboardSignalCard{
+			Value: "Marked",
+			Label: "Deletion",
+			Note:  "Sweep after " + formatDateTime(job.DeleteMarkedAt.Add(24*time.Hour)),
+			Hot:   true,
+		})
+	}
 
 	return &dashboardSelectedView{
 		Job:         job,
 		Counts:      counts,
 		Controls:    controls,
 		SettingsURL: "/jobs/" + job.ID + "/settings",
-		SignalCards: []dashboardSignalCard{
-			{
-				Value: formatNumber(counts["error"] + counts["blocked"]),
-				Label: "Open incidents",
-				Note:  fmt.Sprintf("%d blocked / %d failed", counts["blocked"], counts["error"]),
-				Hot:   true,
-			},
-			{
-				Value: formatNumber(counts["pending"] + counts["crawling"]),
-				Label: "Queue load",
-				Note:  fmt.Sprintf("%d pending, %d crawling", counts["pending"], counts["crawling"]),
-			},
-			{
-				Value: formatNumber(counts["done"]),
-				Label: "Completed",
-				Note:  "URLs that finished successfully",
-			},
-			{
-				Value: string(job.Status),
-				Label: "Job state",
-				Note:  formatDateTime(job.UpdatedAt),
-			},
-		},
+		SignalCards: signalCards,
 	}
 }
 

@@ -51,6 +51,7 @@ func main() {
 	defer nc.Close()
 
 	mb := broker.NewFromConn(nc)
+	jobRepo := store.NewJobRepository(db)
 
 	// Create router.
 	router := gui.NewRouter(db, mb, logger)
@@ -72,6 +73,34 @@ func main() {
 		logger.Info("GUI server started", "addr", cfg.Server.Addr)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			logger.Error("server error", "err", err)
+		}
+	}()
+
+	go func() {
+		ticker := time.NewTicker(time.Hour)
+		defer ticker.Stop()
+		sweep := func() {
+			jobs, err := jobRepo.FindMarkedForDeletionBefore(context.Background(), time.Now().Add(-24*time.Hour))
+			if err != nil {
+				logger.Error("find jobs marked for deletion", "err", err)
+				return
+			}
+			for _, job := range jobs {
+				if err := jobRepo.DeleteCascade(context.Background(), job.ID); err != nil {
+					logger.Error("delete marked job", "job_id", job.ID, "err", err)
+					continue
+				}
+				logger.Info("deleted marked job", "job_id", job.ID, "seed_url", job.SeedURL)
+			}
+		}
+		sweep()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				sweep()
+			}
 		}
 	}()
 

@@ -33,16 +33,17 @@ type JobStats struct {
 
 // Job is the root aggregate for a crawl operation.
 type Job struct {
-	ID         string              `json:"id"`
-	SeedURL    string              `json:"seed_url"`
-	Config     valueobj.CrawlConfig `json:"config"`
-	Status     JobStatus           `json:"status"`
-	Stats      JobStats            `json:"stats"`
-	Error      string              `json:"error,omitempty"`
-	CreatedAt  time.Time           `json:"created_at"`
-	UpdatedAt  time.Time           `json:"updated_at"`
-	StartedAt  time.Time           `json:"started_at,omitempty"`
-	FinishedAt time.Time           `json:"finished_at,omitempty"`
+	ID             string               `json:"id"`
+	SeedURL        string               `json:"seed_url"`
+	Config         valueobj.CrawlConfig `json:"config"`
+	Status         JobStatus            `json:"status"`
+	Stats          JobStats             `json:"stats"`
+	Error          string               `json:"error,omitempty"`
+	DeleteMarkedAt time.Time            `json:"delete_marked_at,omitempty"`
+	CreatedAt      time.Time            `json:"created_at"`
+	UpdatedAt      time.Time            `json:"updated_at"`
+	StartedAt      time.Time            `json:"started_at,omitempty"`
+	FinishedAt     time.Time            `json:"finished_at,omitempty"`
 }
 
 // NewJob creates a new job in pending state.

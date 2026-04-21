@@ -29,6 +29,10 @@ func jobToModel(j *entities.Job) (*JobModel, error) {
 		CreatedAt: j.CreatedAt,
 		UpdatedAt: j.UpdatedAt,
 	}
+	if !j.DeleteMarkedAt.IsZero() {
+		t := j.DeleteMarkedAt
+		m.DeleteMarkedAt = &t
+	}
 	if !j.StartedAt.IsZero() {
 		t := j.StartedAt
 		m.StartedAt = &t
@@ -58,6 +62,9 @@ func modelToJob(m *JobModel) (*entities.Job, error) {
 		Error:     m.Error,
 		CreatedAt: m.CreatedAt,
 		UpdatedAt: m.UpdatedAt,
+	}
+	if m.DeleteMarkedAt != nil {
+		j.DeleteMarkedAt = *m.DeleteMarkedAt
 	}
 	if m.StartedAt != nil {
 		j.StartedAt = *m.StartedAt

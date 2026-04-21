@@ -139,11 +139,11 @@ func (h *datastarDashboardHandlers) handleJobAction(w http.ResponseWriter, r *ht
 
 	action := chi.URLParam(r, "action")
 	if action == "delete" {
-		if err := store.NewJobRepository(h.db).DeleteCascade(r.Context(), jobID); err != nil {
+		if err := store.NewJobRepository(h.db).MarkForDeletion(r.Context(), jobID, time.Now().UTC()); err != nil {
 			writeError(w, err, http.StatusInternalServerError)
 			return
 		}
-		signals.SelectedJobID = ""
+		signals.SelectedJobID = jobID
 		signals.ExceptionsOffset = 0
 		signals.SiteOffset = 0
 

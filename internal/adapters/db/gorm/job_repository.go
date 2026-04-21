@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/atvirokodosprendimai/crawlerdb/internal/domain/entities"
 	"gorm.io/gorm"
@@ -20,6 +21,37 @@ type JobRepository struct {
 // NewJobRepository creates a new JobRepository.
 func NewJobRepository(db *gorm.DB) *JobRepository {
 	return &JobRepository{db: db}
+}
+
+func (r *JobRepository) MarkForDeletion(ctx context.Context, jobID string, markedAt time.Time) error {
+	updates := map[string]any{
+		"delete_marked_at": markedAt,
+		"updated_at":       markedAt,
+		"status":           gorm.Expr("CASE WHEN status IN ('pending','running','paused') THEN 'stopped' ELSE status END"),
+		"finished_at":      gorm.Expr("CASE WHEN finished_at IS NULL THEN ? ELSE finished_at END", markedAt),
+	}
+	return r.db.WithContext(ctx).
+		Model(&JobModel{}).
+		Where("id = ?", jobID).
+		Updates(updates).Error
+}
+
+func (r *JobRepository) FindMarkedForDeletionBefore(ctx context.Context, before time.Time) ([]*entities.Job, error) {
+	var models []JobModel
+	if err := r.db.WithContext(ctx).
+		Where("delete_marked_at IS NOT NULL AND delete_marked_at <= ?", before).
+		Find(&models).Error; err != nil {
+		return nil, err
+	}
+	jobs := make([]*entities.Job, 0, len(models))
+	for _, model := range models {
+		job, err := modelToJob(&model)
+		if err != nil {
+			return nil, err
+		}
+		jobs = append(jobs, job)
+	}
+	return jobs, nil
 }
 
 func (r *JobRepository) DeleteCascade(ctx context.Context, jobID string) error {
