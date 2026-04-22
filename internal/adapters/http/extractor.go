@@ -45,10 +45,6 @@ func (e *LinkExtractor) ExtractLinks(body io.Reader, pageURL, seedHost string) [
 			case "link":
 				href = getAttr(n, "href")
 				rel = getAttr(n, "rel")
-			case "img", "script", "iframe", "audio", "video", "source", "track", "embed":
-				href = getAttr(n, "src")
-			case "object":
-				href = getAttr(n, "data")
 			}
 
 			if href != "" && !isIgnoredScheme(href) {

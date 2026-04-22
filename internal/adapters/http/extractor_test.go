@@ -26,9 +26,6 @@ const testHTML = `<!DOCTYPE html>
   <a href="javascript:void(0)">JS Link</a>
   <a href="mailto:test@example.com">Email</a>
   <a href="/about">Duplicate About</a>
-  <video src="/media/intro.mp4"></video>
-  <source src="/media/intro-hd.mp4" type="video/mp4">
-  <img src="/images/photo.jpg">
   <script>var x = 1;</script>
   <style>.hidden { display: none; }</style>
 </body>
@@ -38,10 +35,9 @@ func TestExtractLinks(t *testing.T) {
 	ext := fetcher.NewLinkExtractor()
 	links := ext.ExtractLinks(strings.NewReader(testHTML), "https://example.com/page", "example.com")
 
-	// Should find: /styles.css, /about, /contact, external.com/page, example.com/internal,
-	// /media/intro.mp4, /media/intro-hd.mp4, /images/photo.jpg
+	// Should find: /styles.css, /about, /contact, external.com/page, example.com/internal
 	// Should skip: javascript:, mailto:, duplicate /about
-	assert.Len(t, links, 8)
+	assert.Len(t, links, 5)
 
 	// Check external classification.
 	var externalCount int
