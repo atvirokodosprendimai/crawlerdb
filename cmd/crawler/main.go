@@ -163,11 +163,17 @@ func main() {
 					identity.ID(), task.JobID, taskDomain, cfg.Crawler.DomainConcurrency,
 				)
 				if err := domainRepo.Assign(ctx, assignment); err != nil {
-					logger.Warn("domain claim failed", "domain", taskDomain, "err", err)
-					return
+					logger.Warn("domain claim failed; processing task anyway",
+						"domain", taskDomain,
+						"job_id", task.JobID,
+						"worker_id", identity.ID(),
+						"url", task.URL,
+						"err", err,
+					)
+				} else {
+					existingAssignments = append(existingAssignments, assignment)
+					logger.Info("claimed domain", "domain", taskDomain, "job", task.JobID)
 				}
-				existingAssignments = append(existingAssignments, assignment)
-				logger.Info("claimed domain", "domain", taskDomain, "job", task.JobID)
 			}
 		}
 
