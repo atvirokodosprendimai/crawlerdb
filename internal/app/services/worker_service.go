@@ -28,6 +28,7 @@ type WorkerService struct {
 	rateLimiter     ports.RateLimiter
 	detector        ports.AntiBotDetector
 	msgBroker       ports.MessageBroker
+	objectStore     ports.ObjectStore
 	extractor       *extraction.Extractor
 	contentDir      string
 	poolSize        int
@@ -45,6 +46,7 @@ func NewWorkerService(
 	rl ports.RateLimiter,
 	detector ports.AntiBotDetector,
 	mb ports.MessageBroker,
+	objectStore ports.ObjectStore,
 	contentDir string,
 	poolSize int,
 	taskTimeout time.Duration,
@@ -63,6 +65,7 @@ func NewWorkerService(
 		rateLimiter:     rl,
 		detector:        detector,
 		msgBroker:       mb,
+		objectStore:     objectStore,
 		extractor:       extraction.NewExtractor(),
 		contentDir:      contentDir,
 		poolSize:        poolSize,
@@ -201,7 +204,12 @@ extract:
 	// Extract content.
 	profile := valueobj.ExtractionProfile{Level: task.Config.Extraction}
 	page := w.extractor.Extract(resp, body, task.URLID, task.JobID, task.URL, task.SeedHost, profile, fetchDuration)
-	if shouldStageContent(page) {
+	if w.objectStore != nil && shouldTransferContent(page) {
+		if err := w.transferContent(ctx, task, page); err != nil {
+			result.Error = fmt.Sprintf("transfer content: %v", err)
+			return result
+		}
+	} else if shouldStageContent(page) {
 		if err := w.stageContent(task.URL, page); err != nil {
 			result.Error = fmt.Sprintf("stage content: %v", err)
 			return result
@@ -237,6 +245,39 @@ func shouldStageContent(page *entities.Page) bool {
 		return false
 	}
 	return len(page.RawContent) > 0 || page.HTMLBody != ""
+}
+
+func shouldTransferContent(page *entities.Page) bool {
+	if page == nil || page.TransferObject != "" {
+		return false
+	}
+	return len(page.RawContent) > 0 || page.HTMLBody != ""
+}
+
+func (w *WorkerService) transferContent(ctx context.Context, task CrawlTask, page *entities.Page) error {
+	if w.objectStore == nil {
+		return nil
+	}
+
+	payload := page.RawContent
+	if len(payload) == 0 && page.HTMLBody != "" {
+		payload = []byte(page.HTMLBody)
+	}
+	if len(payload) == 0 {
+		return nil
+	}
+
+	name := transferObjectName(task, page)
+	key, err := w.objectStore.PutBytes(ctx, name, payload)
+	if err != nil {
+		return err
+	}
+	page.TransferObject = key
+	page.ContentSize = int64(len(payload))
+	page.RawContent = nil
+	page.HTMLBody = ""
+	page.ContentPath = ""
+	return nil
 }
 
 func (w *WorkerService) stageContent(url string, page *entities.Page) error {
@@ -280,7 +321,7 @@ func compactResultForTransport(result *entities.CrawlResult) ([]byte, error) {
 		// Links are already transported in DiscoveredURLs; avoid sending them twice.
 		result.Page.Links = nil
 		// Content is staged to disk before transport.
-		if result.Page.ContentPath != "" {
+		if result.Page.ContentPath != "" || result.Page.TransferObject != "" {
 			result.Page.HTMLBody = ""
 		}
 	}
@@ -293,7 +334,7 @@ func compactResultForTransport(result *entities.CrawlResult) ([]byte, error) {
 		return data, nil
 	}
 
-	if result.Page != nil && result.Page.ContentPath != "" && !isHTMLContentType(result.Page.ContentType) && result.Page.TextContent != "" {
+	if result.Page != nil && (result.Page.ContentPath != "" || result.Page.TransferObject != "") && result.Page.TextContent != "" {
 		result.Page.TextContent = ""
 		data, err = json.Marshal(result)
 		if err != nil {
@@ -322,7 +363,45 @@ func compactResultForTransport(result *entities.CrawlResult) ([]byte, error) {
 			return nil, err
 		}
 	}
+	if len(data) <= maxTransportPayloadBytes {
+		return data, nil
+	}
+
+	if result.Page != nil && len(result.Page.Headers) > 0 {
+		result.Page.Headers = nil
+		data, err = json.Marshal(result)
+		if err != nil {
+			return nil, err
+		}
+	}
 	return data, err
+}
+
+func transferObjectName(task CrawlTask, page *entities.Page) string {
+	return fmt.Sprintf("%s/%s%s", task.JobID, task.URLID, transportContentExtension(task.URL, page.ContentType))
+}
+
+func transportContentExtension(rawURL, contentType string) string {
+	mediaType, _, err := mime.ParseMediaType(contentType)
+	if err == nil {
+		switch strings.ToLower(mediaType) {
+		case "text/html", "application/xhtml+xml":
+			return ".html"
+		case "application/pdf":
+			return ".pdf"
+		case "application/json":
+			return ".json"
+		case "application/xml", "text/xml":
+			return ".xml"
+		case "text/plain":
+			return ".txt"
+		}
+	}
+	ext := strings.ToLower(filepath.Ext(rawURL))
+	if ext == "" || len(ext) > 10 {
+		return ".bin"
+	}
+	return ext
 }
 
 func isHTMLContentType(contentType string) bool {

@@ -15,6 +15,7 @@ type Page struct {
 	ContentType    string            `json:"content_type"`
 	ContentPath    string            `json:"content_path,omitempty"`
 	ContentSize    int64             `json:"content_size,omitempty"`
+	TransferObject string            `json:"transfer_object,omitempty"`
 	Headers        map[string]string `json:"headers"`
 	Title          string            `json:"title"`
 	MetaTags       map[string]string `json:"meta_tags"`

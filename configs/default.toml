@@ -3,6 +3,10 @@ url = "nats://localhost:4222"
 max_reconnects = 60
 reconnect_wait = "2s"
 request_timeout = "10s"
+jetstream_dir = ".crawlerdb/jetstream"
+object_store_bucket = "crawlerdb-transfer"
+object_store_ttl = "24h"
+object_store_max_bytes = 21474836480
 
 [database]
 path = "crawlerdb.sqlite"

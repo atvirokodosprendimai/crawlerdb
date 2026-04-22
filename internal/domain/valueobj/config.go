@@ -12,10 +12,14 @@ type AppConfig struct {
 
 // NATSConfig holds NATS connection settings.
 type NATSConfig struct {
-	URL            string   `toml:"url"`
-	MaxReconnects  int      `toml:"max_reconnects"`
-	ReconnectWait  Duration `toml:"reconnect_wait"`
-	RequestTimeout Duration `toml:"request_timeout"`
+	URL                 string   `toml:"url"`
+	MaxReconnects       int      `toml:"max_reconnects"`
+	ReconnectWait       Duration `toml:"reconnect_wait"`
+	RequestTimeout      Duration `toml:"request_timeout"`
+	JetStreamDir        string   `toml:"jetstream_dir"`
+	ObjectStoreBucket   string   `toml:"object_store_bucket"`
+	ObjectStoreTTL      Duration `toml:"object_store_ttl"`
+	ObjectStoreMaxBytes int64    `toml:"object_store_max_bytes"`
 }
 
 // DatabaseConfig holds SQLite/GORM settings.
@@ -50,10 +54,14 @@ type ServerConfig struct {
 func DefaultAppConfig() AppConfig {
 	return AppConfig{
 		NATS: NATSConfig{
-			URL:            "nats://localhost:4222",
-			MaxReconnects:  60,
-			ReconnectWait:  Duration{2 * time.Second},
-			RequestTimeout: Duration{10 * time.Second},
+			URL:                 "nats://localhost:4222",
+			MaxReconnects:       60,
+			ReconnectWait:       Duration{2 * time.Second},
+			RequestTimeout:      Duration{10 * time.Second},
+			JetStreamDir:        ".crawlerdb/jetstream",
+			ObjectStoreBucket:   "crawlerdb-transfer",
+			ObjectStoreTTL:      Duration{24 * time.Hour},
+			ObjectStoreMaxBytes: 20 << 30,
 		},
 		Database: DatabaseConfig{
 			Path: "crawlerdb.sqlite",

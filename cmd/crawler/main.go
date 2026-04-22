@@ -22,6 +22,7 @@ import (
 	"github.com/atvirokodosprendimai/crawlerdb/internal/app/services"
 	"github.com/atvirokodosprendimai/crawlerdb/internal/domain/entities"
 	"github.com/nats-io/nats.go"
+	"github.com/nats-io/nats.go/jetstream"
 )
 
 func main() {
@@ -75,6 +76,17 @@ func main() {
 	defer nc.Close()
 
 	mb := broker.NewFromConn(nc)
+	objectStore, err := broker.NewObjectStore(nc, jetstream.ObjectStoreConfig{
+		Bucket:      cfg.NATS.ObjectStoreBucket,
+		Description: "crawlerdb transfer payloads",
+		TTL:         cfg.NATS.ObjectStoreTTL.Duration,
+		MaxBytes:    cfg.NATS.ObjectStoreMaxBytes,
+		Storage:     jetstream.FileStorage,
+	})
+	if err != nil {
+		logger.Error("create object store", "bucket", cfg.NATS.ObjectStoreBucket, "err", err)
+		os.Exit(1)
+	}
 
 	// Register worker.
 	w := entities.RecoverWorker(identity.ID(), hostname, cfg.Crawler.PoolSize)
@@ -114,7 +126,7 @@ func main() {
 		taskTimeout = 90 * time.Second
 	}
 
-	workerSvc := services.NewWorkerService(httpFetcher, chromiumFetcher, robotsChecker, rateLimiter, detector, mb, cfg.Crawler.ContentDir, cfg.Crawler.PoolSize, taskTimeout, logger)
+	workerSvc := services.NewWorkerService(httpFetcher, chromiumFetcher, robotsChecker, rateLimiter, detector, mb, objectStore, cfg.Crawler.ContentDir, cfg.Crawler.PoolSize, taskTimeout, logger)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()

@@ -20,6 +20,7 @@ import (
 	"github.com/atvirokodosprendimai/crawlerdb/internal/domain/ports"
 	"github.com/atvirokodosprendimai/crawlerdb/internal/domain/valueobj"
 	"github.com/nats-io/nats.go"
+	"github.com/nats-io/nats.go/jetstream"
 )
 
 func main() {
@@ -60,6 +61,17 @@ func main() {
 
 	mb := broker.NewFromConn(nc)
 	mb.SetTimeout(cfg.NATS.RequestTimeout.Duration)
+	objectStore, err := broker.NewObjectStore(nc, jetstream.ObjectStoreConfig{
+		Bucket:      cfg.NATS.ObjectStoreBucket,
+		Description: "crawlerdb transfer payloads",
+		TTL:         cfg.NATS.ObjectStoreTTL.Duration,
+		MaxBytes:    cfg.NATS.ObjectStoreMaxBytes,
+		Storage:     jetstream.FileStorage,
+	})
+	if err != nil {
+		logger.Error("create object store", "bucket", cfg.NATS.ObjectStoreBucket, "err", err)
+		os.Exit(1)
+	}
 
 	// Create repositories.
 	jobRepo := store.NewJobRepository(db)
@@ -70,7 +82,7 @@ func main() {
 
 	// Create services.
 	jobSvc := services.NewJobService(jobRepo, urlRepo, mb)
-	crawlSvc := services.NewCrawlService(jobRepo, urlRepo, pageRepo, mb)
+	crawlSvc := services.NewCrawlService(jobRepo, urlRepo, pageRepo, objectStore, mb)
 	exportSvc := services.NewExportService(
 		export.NewJSONExporter(pageRepo),
 		export.NewCSVExporter(pageRepo, urlRepo),

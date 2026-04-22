@@ -13,6 +13,8 @@ import (
 func TestLoadDefault(t *testing.T) {
 	cfg := config.LoadDefault()
 	assert.Equal(t, "nats://localhost:4222", cfg.NATS.URL)
+	assert.Equal(t, ".crawlerdb/jetstream", cfg.NATS.JetStreamDir)
+	assert.Equal(t, "crawlerdb-transfer", cfg.NATS.ObjectStoreBucket)
 	assert.Equal(t, "crawlerdb.sqlite", cfg.Database.Path)
 	assert.Equal(t, 10, cfg.Crawler.PoolSize)
 	assert.Equal(t, "data", cfg.Crawler.ContentDir)
@@ -26,6 +28,7 @@ func TestLoadFromFile(t *testing.T) {
 	content := `
 [nats]
 url = "nats://custom:4222"
+object_store_bucket = "transfer-test"
 
 [database]
 path = "/tmp/test.sqlite"
@@ -49,6 +52,7 @@ addr = ":9090"
 	require.NoError(t, err)
 
 	assert.Equal(t, "nats://custom:4222", cfg.NATS.URL)
+	assert.Equal(t, "transfer-test", cfg.NATS.ObjectStoreBucket)
 	assert.Equal(t, "/tmp/test.sqlite", cfg.Database.Path)
 	assert.Equal(t, "TestBot/1.0", cfg.Crawler.UserAgent)
 	assert.Equal(t, 5, cfg.Crawler.MaxDepth)

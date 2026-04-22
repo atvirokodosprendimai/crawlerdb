@@ -19,13 +19,14 @@ import (
 
 // CrawlService handles URL dispatch and result processing.
 type CrawlService struct {
-	jobRepo    ports.JobRepository
-	urlRepo    ports.URLRepository
-	pageRepo   ports.PageRepository
-	broker     ports.MessageBroker
-	normalizer *services.URLNormalizer
-	mu         sync.Mutex
-	lastSent   map[string]time.Time
+	jobRepo     ports.JobRepository
+	urlRepo     ports.URLRepository
+	pageRepo    ports.PageRepository
+	objectStore ports.ObjectStore
+	broker      ports.MessageBroker
+	normalizer  *services.URLNormalizer
+	mu          sync.Mutex
+	lastSent    map[string]time.Time
 }
 
 // NewCrawlService creates a new CrawlService.
@@ -33,15 +34,17 @@ func NewCrawlService(
 	jobRepo ports.JobRepository,
 	urlRepo ports.URLRepository,
 	pageRepo ports.PageRepository,
+	objectStore ports.ObjectStore,
 	broker ports.MessageBroker,
 ) *CrawlService {
 	return &CrawlService{
-		jobRepo:    jobRepo,
-		urlRepo:    urlRepo,
-		pageRepo:   pageRepo,
-		broker:     broker,
-		normalizer: services.NewURLNormalizer(),
-		lastSent:   make(map[string]time.Time),
+		jobRepo:     jobRepo,
+		urlRepo:     urlRepo,
+		pageRepo:    pageRepo,
+		objectStore: objectStore,
+		broker:      broker,
+		normalizer:  services.NewURLNormalizer(),
+		lastSent:    make(map[string]time.Time),
 	}
 }
 
@@ -207,11 +210,17 @@ func (s *CrawlService) ProcessResult(ctx context.Context, result *entities.Crawl
 
 	// Store page if successful.
 	if result.Success && result.Page != nil {
+		if err := s.hydrateTransferredPage(ctx, result.Page); err != nil {
+			return fmt.Errorf("hydrate transferred page: %w", err)
+		}
 		if len(result.Page.Links) == 0 && len(result.DiscoveredURLs) > 0 {
 			result.Page.Links = append([]entities.DiscoveredLink(nil), result.DiscoveredURLs...)
 		}
 		if err := s.pageRepo.Store(ctx, result.Page); err != nil {
 			return fmt.Errorf("store page: %w", err)
+		}
+		if err := s.releaseTransferredPage(ctx, result.Page); err != nil {
+			return fmt.Errorf("release transferred page: %w", err)
 		}
 	}
 
@@ -243,6 +252,38 @@ func (s *CrawlService) ProcessResult(ctx context.Context, result *entities.Crawl
 		}
 	}
 
+	return nil
+}
+
+func (s *CrawlService) hydrateTransferredPage(ctx context.Context, page *entities.Page) error {
+	if page == nil || page.TransferObject == "" {
+		return nil
+	}
+	if s.objectStore == nil {
+		return fmt.Errorf("object store not configured for transfer object %q", page.TransferObject)
+	}
+
+	data, err := s.objectStore.GetBytes(ctx, page.TransferObject)
+	if err != nil {
+		return fmt.Errorf("get transfer object %q: %w", page.TransferObject, err)
+	}
+	page.RawContent = data
+	page.ContentPath = ""
+	page.ContentSize = int64(len(data))
+	return nil
+}
+
+func (s *CrawlService) releaseTransferredPage(ctx context.Context, page *entities.Page) error {
+	if page == nil || page.TransferObject == "" {
+		return nil
+	}
+	if s.objectStore == nil {
+		return fmt.Errorf("object store not configured for transfer object %q", page.TransferObject)
+	}
+	if err := s.objectStore.Delete(ctx, page.TransferObject); err != nil {
+		return fmt.Errorf("delete transfer object %q: %w", page.TransferObject, err)
+	}
+	page.TransferObject = ""
 	return nil
 }
 

@@ -249,7 +249,7 @@ func TestCrawlService_EnqueueAndDispatch(t *testing.T) {
 	jobRepo := store.NewJobRepository(db)
 	urlRepo := store.NewURLRepository(db)
 	pageRepo := store.NewPageRepository(db, store.WithContentDir(filepath.Join(t.TempDir(), "data")))
-	crawlSvc := services.NewCrawlService(jobRepo, urlRepo, pageRepo, b)
+	crawlSvc := services.NewCrawlService(jobRepo, urlRepo, pageRepo, nil, b)
 	jobSvc := services.NewJobService(jobRepo, urlRepo, b)
 	ctx := context.Background()
 
@@ -286,7 +286,7 @@ func TestCrawlService_DispatchURLsRateLimitsPerDomain(t *testing.T) {
 	jobRepo := store.NewJobRepository(db)
 	urlRepo := store.NewURLRepository(db)
 	pageRepo := store.NewPageRepository(db, store.WithContentDir(filepath.Join(t.TempDir(), "data")))
-	crawlSvc := services.NewCrawlService(jobRepo, urlRepo, pageRepo, b)
+	crawlSvc := services.NewCrawlService(jobRepo, urlRepo, pageRepo, nil, b)
 	jobSvc := services.NewJobService(jobRepo, urlRepo, b)
 	ctx := context.Background()
 
@@ -331,7 +331,7 @@ func TestCrawlService_DispatchURLs_AllowsBurstForSameDomainUpToAvailableCapacity
 	jobRepo := store.NewJobRepository(db)
 	urlRepo := store.NewURLRepository(db)
 	pageRepo := store.NewPageRepository(db, store.WithContentDir(filepath.Join(t.TempDir(), "data")))
-	crawlSvc := services.NewCrawlService(jobRepo, urlRepo, pageRepo, b)
+	crawlSvc := services.NewCrawlService(jobRepo, urlRepo, pageRepo, nil, b)
 	jobSvc := services.NewJobService(jobRepo, urlRepo, b)
 	ctx := context.Background()
 
@@ -364,7 +364,7 @@ func TestCrawlService_DispatchURLs_DoesNotOverclaimBeyondAvailableCapacity(t *te
 	jobRepo := store.NewJobRepository(db)
 	urlRepo := store.NewURLRepository(db)
 	pageRepo := store.NewPageRepository(db, store.WithContentDir(filepath.Join(t.TempDir(), "data")))
-	crawlSvc := services.NewCrawlService(jobRepo, urlRepo, pageRepo, b)
+	crawlSvc := services.NewCrawlService(jobRepo, urlRepo, pageRepo, nil, b)
 	jobSvc := services.NewJobService(jobRepo, urlRepo, b)
 	ctx := context.Background()
 
@@ -401,7 +401,7 @@ func TestCrawlService_ProcessResult(t *testing.T) {
 	jobRepo := store.NewJobRepository(db)
 	urlRepo := store.NewURLRepository(db)
 	pageRepo := store.NewPageRepository(db, store.WithContentDir(filepath.Join(t.TempDir(), "data")))
-	crawlSvc := services.NewCrawlService(jobRepo, urlRepo, pageRepo, b)
+	crawlSvc := services.NewCrawlService(jobRepo, urlRepo, pageRepo, nil, b)
 	jobSvc := services.NewJobService(jobRepo, urlRepo, b)
 	ctx := context.Background()
 
@@ -455,7 +455,7 @@ func TestCrawlService_CheckCompletion(t *testing.T) {
 	jobRepo := store.NewJobRepository(db)
 	urlRepo := store.NewURLRepository(db)
 	pageRepo := store.NewPageRepository(db, store.WithContentDir(filepath.Join(t.TempDir(), "data")))
-	crawlSvc := services.NewCrawlService(jobRepo, urlRepo, pageRepo, b)
+	crawlSvc := services.NewCrawlService(jobRepo, urlRepo, pageRepo, nil, b)
 	ctx := context.Background()
 
 	job := entities.NewJob("https://example.com", testConfig())
@@ -486,7 +486,7 @@ func TestWorkerService_ProcessTask(t *testing.T) {
 	checker := robots.NewChecker(mockHTTPFetcher, "TestBot", time.Hour)
 	rl := fetcher.NewAdaptiveRateLimiter(10 * time.Millisecond)
 
-	worker := services.NewWorkerService(mockHTTPFetcher, nil, checker, rl, nil, b, t.TempDir(), 2, time.Minute, nil)
+	worker := services.NewWorkerService(mockHTTPFetcher, nil, checker, rl, nil, b, nil, t.TempDir(), 2, time.Minute, nil)
 
 	task := services.CrawlTask{
 		JobID:    "job1",
@@ -520,7 +520,7 @@ func TestWorkerService_ProcessTask_StagesBinaryContent(t *testing.T) {
 
 	checker := robots.NewChecker(mockHTTPFetcher, "TestBot", time.Hour)
 	rl := fetcher.NewAdaptiveRateLimiter(10 * time.Millisecond)
-	worker := services.NewWorkerService(mockHTTPFetcher, nil, checker, rl, nil, b, t.TempDir(), 2, time.Minute, nil)
+	worker := services.NewWorkerService(mockHTTPFetcher, nil, checker, rl, nil, b, nil, t.TempDir(), 2, time.Minute, nil)
 
 	result := worker.ProcessTask(context.Background(), services.CrawlTask{
 		JobID:    "job1",
@@ -556,7 +556,7 @@ func TestWorkerService_ProcessTask_StagesHTMLContentAndClearsTransportBody(t *te
 
 	checker := robots.NewChecker(mockHTTPFetcher, "TestBot", time.Hour)
 	rl := fetcher.NewAdaptiveRateLimiter(10 * time.Millisecond)
-	worker := services.NewWorkerService(mockHTTPFetcher, nil, checker, rl, nil, b, t.TempDir(), 2, time.Minute, nil)
+	worker := services.NewWorkerService(mockHTTPFetcher, nil, checker, rl, nil, b, nil, t.TempDir(), 2, time.Minute, nil)
 
 	result := worker.ProcessTask(context.Background(), services.CrawlTask{
 		JobID:    "job1",
@@ -577,13 +577,49 @@ func TestWorkerService_ProcessTask_StagesHTMLContentAndClearsTransportBody(t *te
 	require.NoError(t, err)
 }
 
+func TestWorkerService_ProcessTask_UploadsTransferObject(t *testing.T) {
+	b := setupTestNATS(t)
+	mockHTTPFetcher := &mockFetcher{
+		responses: map[string]*ports.FetchResponse{
+			"https://example.com/file.pdf": {
+				StatusCode:  200,
+				ContentType: "application/pdf",
+				Headers:     http.Header{"Content-Type": {"application/pdf"}},
+				Body:        io.NopCloser(strings.NewReader("pdf-binary-data")),
+				URL:         "https://example.com/file.pdf",
+			},
+		},
+	}
+
+	store := newMockObjectStore()
+	checker := robots.NewChecker(mockHTTPFetcher, "TestBot", time.Hour)
+	rl := fetcher.NewAdaptiveRateLimiter(10 * time.Millisecond)
+	worker := services.NewWorkerService(mockHTTPFetcher, nil, checker, rl, nil, b, store, t.TempDir(), 2, time.Minute, nil)
+
+	result := worker.ProcessTask(context.Background(), services.CrawlTask{
+		JobID:    "job1",
+		URLID:    "url1",
+		URL:      "https://example.com/file.pdf",
+		Depth:    0,
+		Config:   testConfig(),
+		SeedHost: "example.com",
+	})
+
+	require.True(t, result.Success)
+	require.NotNil(t, result.Page)
+	assert.Equal(t, "job1/url1.pdf", result.Page.TransferObject)
+	assert.Equal(t, int64(len("pdf-binary-data")), result.Page.ContentSize)
+	assert.Nil(t, result.Page.RawContent)
+	assert.Equal(t, []byte("pdf-binary-data"), store.objects["job1/url1.pdf"])
+}
+
 func TestCrawlService_ProcessResult_RestoresPageLinksFromDiscoveredURLs(t *testing.T) {
 	db := setupTestDB(t)
 	b := setupTestNATS(t)
 	jobRepo := store.NewJobRepository(db)
 	urlRepo := store.NewURLRepository(db)
 	pageRepo := store.NewPageRepository(db, store.WithContentDir(filepath.Join(t.TempDir(), "data")))
-	crawlSvc := services.NewCrawlService(jobRepo, urlRepo, pageRepo, b)
+	crawlSvc := services.NewCrawlService(jobRepo, urlRepo, pageRepo, nil, b)
 	jobSvc := services.NewJobService(jobRepo, urlRepo, b)
 	ctx := context.Background()
 
@@ -623,6 +659,50 @@ func TestCrawlService_ProcessResult_RestoresPageLinksFromDiscoveredURLs(t *testi
 	assert.Equal(t, "https://example.com/about", storedPage.Links[0].Normalized)
 }
 
+func TestCrawlService_ProcessResult_DownloadsTransferObjectAndDeletesIt(t *testing.T) {
+	db := setupTestDB(t)
+	b := setupTestNATS(t)
+	jobRepo := store.NewJobRepository(db)
+	urlRepo := store.NewURLRepository(db)
+	pageRepo := store.NewPageRepository(db, store.WithContentDir(filepath.Join(t.TempDir(), "data")))
+	objectStore := newMockObjectStore()
+	crawlSvc := services.NewCrawlService(jobRepo, urlRepo, pageRepo, objectStore, b)
+	jobSvc := services.NewJobService(jobRepo, urlRepo, b)
+	ctx := context.Background()
+
+	job, err := jobSvc.CreateJob(ctx, "https://example.com", testConfig())
+	require.NoError(t, err)
+	require.NoError(t, jobSvc.StartJob(ctx, job.ID))
+	require.NoError(t, crawlSvc.EnqueueSeedURL(ctx, job))
+
+	claimed, err := urlRepo.Claim(ctx, job.ID, 1)
+	require.NoError(t, err)
+	require.Len(t, claimed, 1)
+
+	objectStore.objects["job1/url1.html"] = []byte("<html><body>hello</body></html>")
+	page := entities.NewPage(claimed[0].ID, job.ID)
+	page.HTTPStatus = 200
+	page.ContentType = "text/html; charset=utf-8"
+	page.TransferObject = "job1/url1.html"
+	page.TextContent = "hello"
+	result := &entities.CrawlResult{
+		URL:            claimed[0],
+		Page:           page,
+		Success:        true,
+		DiscoveredURLs: []entities.DiscoveredLink{{RawURL: "/about", Normalized: "https://example.com/about", URLHash: "h1"}},
+	}
+
+	err = crawlSvc.ProcessResult(ctx, result)
+	require.NoError(t, err)
+
+	storedPage, err := pageRepo.FindByURLID(ctx, claimed[0].ID)
+	require.NoError(t, err)
+	require.NotNil(t, storedPage)
+	assert.NotEmpty(t, storedPage.ContentPath)
+	_, ok := objectStore.objects["job1/url1.html"]
+	assert.False(t, ok)
+}
+
 // mockFetcher for worker tests.
 type mockFetcher struct {
 	responses map[string]*ports.FetchResponse
@@ -637,4 +717,30 @@ func (m *mockFetcher) Fetch(_ context.Context, url string) (*ports.FetchResponse
 		Body:       io.NopCloser(strings.NewReader("")),
 		Headers:    http.Header{},
 	}, nil
+}
+
+type mockObjectStore struct {
+	objects map[string][]byte
+}
+
+func newMockObjectStore() *mockObjectStore {
+	return &mockObjectStore{objects: make(map[string][]byte)}
+}
+
+func (m *mockObjectStore) PutBytes(_ context.Context, name string, data []byte) (string, error) {
+	m.objects[name] = append([]byte(nil), data...)
+	return name, nil
+}
+
+func (m *mockObjectStore) GetBytes(_ context.Context, name string) ([]byte, error) {
+	data, ok := m.objects[name]
+	if !ok {
+		return nil, os.ErrNotExist
+	}
+	return append([]byte(nil), data...), nil
+}
+
+func (m *mockObjectStore) Delete(_ context.Context, name string) error {
+	delete(m.objects, name)
+	return nil
 }

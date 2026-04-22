@@ -10,6 +10,7 @@ import (
 	"github.com/nats-io/nats-server/v2/server"
 	natsserver "github.com/nats-io/nats-server/v2/test"
 	"github.com/nats-io/nats.go"
+	"github.com/nats-io/nats.go/jetstream"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -18,6 +19,17 @@ func startTestServer(t *testing.T) *server.Server {
 	t.Helper()
 	opts := natsserver.DefaultTestOptions
 	opts.Port = -1 // random port
+	s := natsserver.RunServer(&opts)
+	t.Cleanup(s.Shutdown)
+	return s
+}
+
+func startJetStreamTestServer(t *testing.T) *server.Server {
+	t.Helper()
+	opts := natsserver.DefaultTestOptions
+	opts.Port = -1
+	opts.JetStream = true
+	opts.StoreDir = t.TempDir()
 	s := natsserver.RunServer(&opts)
 	t.Cleanup(s.Shutdown)
 	return s
@@ -134,4 +146,29 @@ func TestSubjects(t *testing.T) {
 	assert.Equal(t, "gui.push.job123", broker.GUIPushSubject("job123"))
 	assert.Equal(t, "job.command.job123", broker.JobCommandSubject("job123"))
 	assert.Equal(t, "webhook.url.blocked", broker.WebhookSubject("url.blocked"))
+}
+
+func TestObjectStore(t *testing.T) {
+	s := startJetStreamTestServer(t)
+	b := newBroker(t, s)
+
+	store, err := broker.NewObjectStore(b.Conn(), jetstream.ObjectStoreConfig{
+		Bucket:   "transfer_test",
+		TTL:      time.Hour,
+		MaxBytes: 1024 * 1024,
+		Storage:  jetstream.FileStorage,
+	})
+	require.NoError(t, err)
+
+	key, err := store.PutBytes(context.Background(), "job/url1.pdf", []byte("payload"))
+	require.NoError(t, err)
+	assert.Equal(t, "job/url1.pdf", key)
+
+	body, err := store.GetBytes(context.Background(), key)
+	require.NoError(t, err)
+	assert.Equal(t, []byte("payload"), body)
+
+	require.NoError(t, store.Delete(context.Background(), key))
+	_, err = store.GetBytes(context.Background(), key)
+	assert.Error(t, err)
 }

@@ -34,6 +34,8 @@ func main() {
 	}
 	opts.ServerName = "crawlerdb-nats"
 	opts.NoSigs = true
+	opts.JetStream = true
+	opts.StoreDir = cfg.NATS.JetStreamDir
 
 	srv, err := server.NewServer(opts)
 	if err != nil {
