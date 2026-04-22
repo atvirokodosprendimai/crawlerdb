@@ -377,6 +377,11 @@ func compactResultForTransport(result *entities.CrawlResult) ([]byte, error) {
 	return data, err
 }
 
+// PrepareResultForTransport compacts a crawl result so it can be safely sent over NATS.
+func PrepareResultForTransport(result *entities.CrawlResult) ([]byte, error) {
+	return compactResultForTransport(result)
+}
+
 func transferObjectName(task CrawlTask, page *entities.Page) string {
 	return fmt.Sprintf("%s/%s%s", task.JobID, task.URLID, transportContentExtension(task.URL, page.ContentType))
 }

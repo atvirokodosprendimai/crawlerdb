@@ -134,6 +134,7 @@ func main() {
 	// Subscribe to domain-specific dispatch subjects.
 	sem := make(chan struct{}, cfg.Crawler.PoolSize)
 	var wg sync.WaitGroup
+	var assignmentMu sync.RWMutex
 
 	_, _ = nc.QueueSubscribe("crawl.dispatch.>", broker.QueueGroupCrawler, func(msg *nats.Msg) {
 		var task services.CrawlTask
@@ -152,12 +153,14 @@ func main() {
 		// Check if this domain is assigned to us.
 		taskDomain := extractDomain(task.URL)
 		assigned := false
+		assignmentMu.RLock()
 		for _, a := range existingAssignments {
 			if a.Domain == taskDomain && a.IsActive() {
 				assigned = true
 				break
 			}
 		}
+		assignmentMu.RUnlock()
 
 		// If domain not assigned, try to claim it.
 		if !assigned {
@@ -187,7 +190,9 @@ func main() {
 						"err", err,
 					)
 				} else {
+					assignmentMu.Lock()
 					existingAssignments = append(existingAssignments, assignment)
+					assignmentMu.Unlock()
 					logger.Info("claimed domain", "domain", taskDomain, "job", task.JobID)
 				}
 			}
@@ -212,12 +217,22 @@ func main() {
 				"discovered_urls", len(result.DiscoveredURLs),
 			)
 
-			resultData, _ := json.Marshal(result)
+			resultData, err := services.PrepareResultForTransport(result)
+			if err != nil {
+				logger.Error("marshal crawl result",
+					"job_id", task.JobID,
+					"url_id", task.URLID,
+					"url", task.URL,
+					"err", err,
+				)
+				return
+			}
 			if err := mb.Publish(ctx, broker.CrawlResultSubject(task.JobID), resultData); err != nil {
 				logger.Error("publish crawl result",
 					"job_id", task.JobID,
 					"subject", broker.CrawlResultSubject(task.JobID),
 					"url", task.URL,
+					"bytes", len(resultData),
 					"err", err,
 				)
 				return
@@ -226,6 +241,7 @@ func main() {
 				"job_id", task.JobID,
 				"subject", broker.CrawlResultSubject(task.JobID),
 				"url", task.URL,
+				"bytes", len(resultData),
 			)
 		}()
 	})
@@ -240,18 +256,21 @@ func main() {
 				return
 			case <-ticker.C:
 				now := time.Now().UTC()
-				_ = workerRepo.UpdateHeartbeat(ctx, identity.ID(), now)
-
-				// Publish heartbeat to NATS for core monitoring.
 				hb := map[string]any{
 					"worker_id": identity.ID(),
 					"hostname":  hostname,
 					"status":    "alive",
-					"domains":   assignmentDomains(existingAssignments),
+					"domains": func() []string {
+						assignmentMu.RLock()
+						defer assignmentMu.RUnlock()
+						return assignmentDomains(existingAssignments)
+					}(),
 					"timestamp": now,
 				}
 				data, _ := json.Marshal(hb)
-				_ = nc.Publish(broker.SubjectWorkerHeartbeat, data)
+				if err := nc.Publish(broker.SubjectWorkerHeartbeat, data); err != nil {
+					logger.Warn("publish worker heartbeat", "worker_id", identity.ID(), "err", err)
+				}
 			}
 		}
 	}()

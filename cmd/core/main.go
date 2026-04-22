@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -88,6 +89,7 @@ func main() {
 		export.NewCSVExporter(pageRepo, urlRepo),
 		export.NewSitemapExporter(urlRepo),
 	)
+	heartbeats := newWorkerHeartbeatTracker()
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
@@ -119,6 +121,36 @@ func main() {
 		_ = msg.Respond(reply)
 
 		logger.Info("job created", "id", job.ID, "seed", req.SeedURL)
+	})
+
+	_, _ = nc.Subscribe(broker.SubjectWorkerHeartbeat, func(msg *nats.Msg) {
+		var hb struct {
+			WorkerID  string    `json:"worker_id"`
+			Hostname  string    `json:"hostname"`
+			Status    string    `json:"status"`
+			Timestamp time.Time `json:"timestamp"`
+		}
+		if err := json.Unmarshal(msg.Data, &hb); err != nil {
+			logger.Warn("unmarshal worker heartbeat", "err", err)
+			return
+		}
+		if strings.TrimSpace(hb.WorkerID) == "" {
+			return
+		}
+		ts := hb.Timestamp.UTC()
+		if ts.IsZero() {
+			ts = time.Now().UTC()
+		}
+		heartbeats.Record(hb.WorkerID, ts)
+		if err := retrySQLiteBusy(ctx, 2, 100*time.Millisecond, func() error {
+			return workerRepo.UpdateHeartbeat(ctx, hb.WorkerID, ts)
+		}); err != nil {
+			logger.Debug("update worker heartbeat from broker",
+				"worker_id", hb.WorkerID,
+				"hostname", hb.Hostname,
+				"err", err,
+			)
+		}
 	})
 
 	_, _ = nc.Subscribe("job.retry", func(msg *nats.Msg) {
@@ -370,16 +402,24 @@ func main() {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				stale, err := workerRepo.FindStale(ctx, ttl)
+				online, err := workerRepo.ListOnline(ctx)
 				if err != nil {
-					logger.Error("find stale workers", "err", err)
+					logger.Error("list online workers", "err", err)
 					continue
 				}
-				for _, w := range stale {
+				now := time.Now().UTC()
+				for _, w := range online {
+					lastHeartbeat := w.LastHeartbeat.UTC()
+					if seen, ok := heartbeats.LastSeen(w.ID); ok && seen.After(lastHeartbeat) {
+						lastHeartbeat = seen
+					}
+					if now.Sub(lastHeartbeat) < ttl {
+						continue
+					}
 					logger.Warn("reaping stale worker",
 						"worker_id", w.ID,
 						"hostname", w.Hostname,
-						"last_heartbeat", w.LastHeartbeat,
+						"last_heartbeat", lastHeartbeat,
 					)
 					assignments, err := domainRepo.FindByWorker(ctx, w.ID)
 					if err != nil {
@@ -515,4 +555,34 @@ func isSQLiteBusy(err error) bool {
 		strings.Contains(msg, "database table is locked") ||
 		strings.Contains(msg, "sql logic error: database is locked") ||
 		strings.Contains(msg, "sqlite_busy")
+}
+
+type workerHeartbeatTracker struct {
+	mu       sync.RWMutex
+	lastSeen map[string]time.Time
+}
+
+func newWorkerHeartbeatTracker() *workerHeartbeatTracker {
+	return &workerHeartbeatTracker{
+		lastSeen: make(map[string]time.Time),
+	}
+}
+
+func (t *workerHeartbeatTracker) Record(workerID string, ts time.Time) {
+	if workerID == "" {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if current, ok := t.lastSeen[workerID]; ok && current.After(ts) {
+		return
+	}
+	t.lastSeen[workerID] = ts
+}
+
+func (t *workerHeartbeatTracker) LastSeen(workerID string) (time.Time, bool) {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	ts, ok := t.lastSeen[workerID]
+	return ts, ok
 }

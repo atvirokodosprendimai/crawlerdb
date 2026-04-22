@@ -613,6 +613,34 @@ func TestWorkerService_ProcessTask_UploadsTransferObject(t *testing.T) {
 	assert.Equal(t, []byte("pdf-binary-data"), store.objects["job1/url1.pdf"])
 }
 
+func TestPrepareResultForTransport_TrimsLargeStoredPayloads(t *testing.T) {
+	large := strings.Repeat("x", 700*1024)
+	result := &entities.CrawlResult{
+		URL: &entities.CrawlURL{
+			ID:         "url1",
+			JobID:      "job1",
+			Normalized: "https://example.com/page",
+		},
+		Success: true,
+		Page: &entities.Page{
+			ID:             "page1",
+			URLID:          "url1",
+			JobID:          "job1",
+			ContentPath:    "data/example/page.html",
+			HTMLBody:       large,
+			TextContent:    large,
+			StructuredData: []any{map[string]any{"huge": large}},
+			MetaTags:       map[string]string{"description": large},
+			Headers:        map[string]string{"x-large": large},
+		},
+	}
+
+	data, err := services.PrepareResultForTransport(result)
+	require.NoError(t, err)
+	assert.Less(t, len(data), 900*1024)
+	assert.Empty(t, result.Page.HTMLBody)
+}
+
 func TestCrawlService_ProcessResult_RestoresPageLinksFromDiscoveredURLs(t *testing.T) {
 	db := setupTestDB(t)
 	b := setupTestNATS(t)
