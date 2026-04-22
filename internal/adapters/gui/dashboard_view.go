@@ -552,6 +552,10 @@ func refreshDashboardExpr() string {
 	return "@get('/api/gui/dashboard')"
 }
 
+func subscribeDashboardExpr() string {
+	return "@get('/api/gui/subscribe', {openWhenHidden: true})"
+}
+
 func selectJobExpr(id string) string {
 	return fmt.Sprintf("$selectedJobId = '%s'; $exceptionsOffset = 0; $siteOffset = 0; @get('/api/gui/dashboard')", id)
 }

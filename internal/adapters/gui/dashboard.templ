@@ -23,15 +23,20 @@ templ DashboardPage() {
                         </div>
                     </div>
                 </div>
-                <div id="dashboard-root" data-init={ refreshDashboardExpr() } data-on:dashboard-refresh={ refreshDashboardExpr() }>
+                <div id="dashboard-root" data-init={ refreshDashboardExpr() }>
                     <div class="panel section">
                         <div class="empty">Loading dashboard…</div>
                     </div>
                 </div>
-                <div data-init="@get('/api/gui/events', {openWhenHidden: true})"></div>
+                <div id="dashboard-refresh-trigger" hidden></div>
+                <div data-init={ subscribeDashboardExpr() }></div>
             </div>
         </body>
     </html>
+}
+
+templ DashboardRefreshTrigger(token string) {
+    <div data-refresh-token={ token } data-init={ refreshDashboardExpr() }></div>
 }
 
 templ DashboardRoot(view dashboardView) {

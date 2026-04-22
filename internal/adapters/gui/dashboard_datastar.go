@@ -256,7 +256,7 @@ func (h *datastarDashboardHandlers) handleJobAction(w http.ResponseWriter, r *ht
 	}
 }
 
-func (h *datastarDashboardHandlers) handleEvents(w http.ResponseWriter, r *http.Request) {
+func (h *datastarDashboardHandlers) handleSubscribe(w http.ResponseWriter, r *http.Request) {
 	if _, err := readDashboardSignals(r); err != nil {
 		writeError(w, err, http.StatusBadRequest)
 		return
@@ -330,7 +330,11 @@ func (h *datastarDashboardHandlers) handleEvents(w http.ResponseWriter, r *http.
 				return
 			}
 			_ = sse.PatchElements(html, datastar.WithSelector("#event-stream"), datastar.WithMode(datastar.ElementPatchModePrepend))
-			_ = sse.ExecuteScript("document.getElementById('dashboard-root')?.dispatchEvent(new CustomEvent('dashboard-refresh', { bubbles: true }))")
+			_ = sse.PatchElementTempl(
+				DashboardRefreshTrigger(time.Now().UTC().Format(time.RFC3339Nano)),
+				datastar.WithSelector("#dashboard-refresh-trigger"),
+				datastar.WithMode(datastar.ElementPatchModeInner),
+			)
 		}
 	}
 }

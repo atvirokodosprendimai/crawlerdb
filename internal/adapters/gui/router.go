@@ -425,7 +425,8 @@ func NewRouter(db *gorm.DB, broker ports.MessageBroker, logger *slog.Logger) *Ro
 		r.Get("/gui/dashboard", datastarHandlers.handleDashboard)
 		r.Post("/gui/jobs", datastarHandlers.handleCreateJob)
 		r.Post("/gui/jobs/{id}/{action}", datastarHandlers.handleJobAction)
-		r.Get("/gui/events", datastarHandlers.handleEvents)
+		r.Get("/gui/subscribe", datastarHandlers.handleSubscribe)
+		r.Get("/gui/events", datastarHandlers.handleSubscribe)
 		r.Get("/gui/clock", datastarHandlers.handleClock)
 
 		// Export.
