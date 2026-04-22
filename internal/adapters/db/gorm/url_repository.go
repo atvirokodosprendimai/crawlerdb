@@ -332,6 +332,22 @@ func (r *URLRepository) RequeueCrawlingByDomain(ctx context.Context, jobID, doma
 	return result.RowsAffected, nil
 }
 
+func (r *URLRepository) RequeueCrawlingByJob(ctx context.Context, jobID string) (int64, error) {
+	now := time.Now().UTC()
+	result := r.db.WithContext(ctx).
+		Model(&URLModel{}).
+		Where("job_id = ? AND status = ?", jobID, string(entities.URLStatusCrawling)).
+		Updates(map[string]any{
+			"status":     string(entities.URLStatusPending),
+			"updated_at": now,
+			"last_error": "manually reset from crawling",
+		})
+	if result.Error != nil {
+		return 0, result.Error
+	}
+	return result.RowsAffected, nil
+}
+
 func (r *URLRepository) RequeueTimedOutCrawling(ctx context.Context, before time.Time) (int64, error) {
 	now := time.Now().UTC()
 	result := r.db.WithContext(ctx).

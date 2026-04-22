@@ -182,6 +182,28 @@ func (h *datastarDashboardHandlers) handleJobAction(w http.ResponseWriter, r *ht
 		}
 		return
 	}
+	if action == "reset-crawling" {
+		if _, err := store.NewURLRepository(h.db).RequeueCrawlingByJob(r.Context(), jobID); err != nil {
+			writeError(w, err, http.StatusInternalServerError)
+			return
+		}
+		signals.SelectedJobID = jobID
+		signals.ExceptionsOffset = 0
+		signals.SiteOffset = 0
+
+		view, err := h.loader.load(r.Context(), &signals)
+		if err != nil {
+			writeError(w, err, http.StatusInternalServerError)
+			return
+		}
+
+		sse := datastar.NewSSE(w, r)
+		patchDashboardSignals(sse, signals)
+		if err := patchDashboardRoot(r.Context(), sse, view); err != nil {
+			writeError(w, err, http.StatusInternalServerError)
+		}
+		return
+	}
 
 	if h.broker == nil {
 		writeError(w, fmt.Errorf("message broker unavailable"), http.StatusServiceUnavailable)

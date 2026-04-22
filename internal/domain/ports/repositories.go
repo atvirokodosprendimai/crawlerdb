@@ -23,6 +23,7 @@ type URLRepository interface {
 	Claim(ctx context.Context, jobID string, limit int) ([]*entities.CrawlURL, error)
 	ClaimByIDs(ctx context.Context, jobID string, ids []string) ([]*entities.CrawlURL, error)
 	RequeueCrawlingByDomain(ctx context.Context, jobID, domain string) (int64, error)
+	RequeueCrawlingByJob(ctx context.Context, jobID string) (int64, error)
 	RequeueTimedOutCrawling(ctx context.Context, before time.Time) (int64, error)
 	RequeueDueRevisits(ctx context.Context, before time.Time) (int64, error)
 	RequeueJobForRevisit(ctx context.Context, jobID string) (int64, error)

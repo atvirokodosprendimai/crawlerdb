@@ -68,6 +68,10 @@ func (s *CrawlService) EnqueueSeedURL(ctx context.Context, job *entities.Job) er
 
 // DispatchURLs claims pending URLs and publishes them to NATS for workers.
 func (s *CrawlService) DispatchURLs(ctx context.Context, jobID string, cfg valueobj.CrawlConfig, limit int) (int, error) {
+	if limit <= 0 {
+		return 0, nil
+	}
+
 	job, err := s.jobRepo.FindByID(ctx, jobID)
 	if err != nil {
 		return 0, fmt.Errorf("find job: %w", err)
@@ -76,8 +80,17 @@ func (s *CrawlService) DispatchURLs(ctx context.Context, jobID string, cfg value
 		return 0, fmt.Errorf("job %s not found", jobID)
 	}
 
+	counts, err := s.urlRepo.CountByStatus(ctx, jobID)
+	if err != nil {
+		return 0, fmt.Errorf("count URL statuses: %w", err)
+	}
+	available := limit - counts[entities.URLStatusCrawling]
+	if available <= 0 {
+		return 0, nil
+	}
+
 	seedHost := extractHost(job.SeedURL)
-	selectedIDs, err := s.selectDispatchIDs(ctx, jobID, cfg, limit)
+	selectedIDs, err := s.selectDispatchIDs(ctx, jobID, cfg, available)
 	if err != nil {
 		return 0, fmt.Errorf("select dispatch URLs: %w", err)
 	}

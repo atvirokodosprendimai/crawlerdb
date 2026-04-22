@@ -453,6 +453,11 @@ func buildSelectedView(job *entities.Job, counts map[string]int) *dashboardSelec
 			dashboardControl{Label: "Revisit Site", Class: "btn btn-primary", Action: jobActionExpr(job.ID, "revisit")},
 		)
 	}
+	if counts["crawling"] > 0 {
+		controls = append(controls,
+			dashboardControl{Label: "Reset Crawling", Class: "btn btn-warning", Action: jobActionExpr(job.ID, "reset-crawling")},
+		)
+	}
 	controls = append(controls,
 		dashboardControl{Label: "Dedupe URLs", Class: "btn btn-secondary", Action: jobActionExpr(job.ID, "dedupe")},
 		dashboardControl{Label: "Mark Delete", Class: "btn btn-danger", Action: jobActionExpr(job.ID, "delete")},
