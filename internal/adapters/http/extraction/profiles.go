@@ -52,24 +52,17 @@ func (e *Extractor) Extract(
 	page.Headers = headers
 
 	if isHTMLContentType(resp.ContentType) {
-		// Always extract title and meta from HTML responses.
-		reader := strings.NewReader(string(body))
-		page.Title = fetcher.ExtractTitle(reader)
-
-		reader.Reset(string(body))
-		page.MetaTags = fetcher.ExtractMetaTags(reader)
-
-		// Always extract links from HTML responses.
-		reader.Reset(string(body))
-		page.Links = e.linkExtractor.ExtractLinks(reader, pageURL, seedHost)
+		doc := e.linkExtractor.ExtractDocument(strings.NewReader(string(body)), pageURL, seedHost)
+		page.Title = doc.Title
+		page.MetaTags = doc.Meta
+		page.Links = doc.Links
 
 		// Standard: include HTML body in-memory for downstream storage.
 		if profile.IncludesHTML() {
 			page.HTMLBody = string(body)
 		}
 
-		reader.Reset(string(body))
-		page.TextContent = fetcher.ExtractText(reader)
+		page.TextContent = doc.Text
 
 		if profile.IncludesStructuredData() {
 			page.StructuredData = extractStructuredData(body)

@@ -16,6 +16,13 @@ type LinkExtractor struct {
 	normalizer *services.URLNormalizer
 }
 
+type HTMLDocumentData struct {
+	Title string
+	Meta  map[string]string
+	Links []entities.DiscoveredLink
+	Text  string
+}
+
 // NewLinkExtractor creates a new link extractor.
 func NewLinkExtractor() *LinkExtractor {
 	return &LinkExtractor{
@@ -23,19 +30,37 @@ func NewLinkExtractor() *LinkExtractor {
 	}
 }
 
-// ExtractLinks parses HTML and returns all discovered links.
-func (e *LinkExtractor) ExtractLinks(body io.Reader, pageURL, seedHost string) []entities.DiscoveredLink {
+func (e *LinkExtractor) ExtractDocument(body io.Reader, pageURL, seedHost string) HTMLDocumentData {
 	doc, err := html.Parse(body)
 	if err != nil {
-		return nil
+		return HTMLDocumentData{}
 	}
 
-	var links []entities.DiscoveredLink
-	seen := make(map[string]struct{})
+	result := HTMLDocumentData{
+		Meta: make(map[string]string),
+	}
+	seenLinks := make(map[string]struct{})
+	var textBuilder strings.Builder
 
-	var walk func(*html.Node)
-	walk = func(n *html.Node) {
+	var walk func(*html.Node, bool)
+	walk = func(n *html.Node, hidden bool) {
 		if n.Type == html.ElementNode {
+			switch n.Data {
+			case "title":
+				if result.Title == "" {
+					result.Title = strings.TrimSpace(extractText(n))
+				}
+			case "meta":
+				name := getAttr(n, "name")
+				if name == "" {
+					name = getAttr(n, "property")
+				}
+				content := getAttr(n, "content")
+				if name != "" && content != "" {
+					result.Meta[name] = content
+				}
+			}
+
 			for _, ref := range extractNodeReferences(n) {
 				if ref.href == "" || isIgnoredScheme(ref.href) {
 					continue
@@ -45,30 +70,52 @@ func (e *LinkExtractor) ExtractLinks(body io.Reader, pageURL, seedHost string) [
 				if err != nil {
 					continue
 				}
-				if _, ok := seen[norm.Hash]; ok {
+				if _, ok := seenLinks[norm.Hash]; ok {
 					continue
 				}
 
-				seen[norm.Hash] = struct{}{}
-				link := entities.DiscoveredLink{
+				seenLinks[norm.Hash] = struct{}{}
+				result.Links = append(result.Links, entities.DiscoveredLink{
 					RawURL:     ref.href,
 					Normalized: norm.Normalized,
 					URLHash:    norm.Hash,
 					IsExternal: !e.normalizer.IsInternal(norm.Normalized, seedHost),
 					Rel:        ref.rel,
 					Anchor:     strings.TrimSpace(ref.anchor),
-				}
-				links = append(links, link)
+				})
+			}
+
+			switch n.Data {
+			case "script", "style", "noscript", "head":
+				hidden = true
+			}
+		}
+
+		if !hidden && n.Type == html.TextNode {
+			text := strings.TrimSpace(n.Data)
+			if text != "" {
+				textBuilder.WriteString(text)
+				textBuilder.WriteString(" ")
 			}
 		}
 
 		for c := n.FirstChild; c != nil; c = c.NextSibling {
-			walk(c)
+			walk(c, hidden)
 		}
 	}
-	walk(doc)
 
-	return links
+	walk(doc, false)
+	result.Text = strings.TrimSpace(textBuilder.String())
+	if len(result.Meta) == 0 {
+		result.Meta = nil
+	}
+
+	return result
+}
+
+// ExtractLinks parses HTML and returns all discovered links.
+func (e *LinkExtractor) ExtractLinks(body io.Reader, pageURL, seedHost string) []entities.DiscoveredLink {
+	return e.ExtractDocument(body, pageURL, seedHost).Links
 }
 
 type extractedReference struct {
@@ -164,87 +211,17 @@ func isBrowsableDocumentURL(rawURL string) bool {
 
 // ExtractTitle returns the <title> text from HTML.
 func ExtractTitle(body io.Reader) string {
-	doc, err := html.Parse(body)
-	if err != nil {
-		return ""
-	}
-
-	var title string
-	var find func(*html.Node)
-	find = func(n *html.Node) {
-		if n.Type == html.ElementNode && n.Data == "title" {
-			title = extractText(n)
-			return
-		}
-		for c := n.FirstChild; c != nil; c = c.NextSibling {
-			find(c)
-			if title != "" {
-				return
-			}
-		}
-	}
-	find(doc)
-	return strings.TrimSpace(title)
+	return NewLinkExtractor().ExtractDocument(body, "", "").Title
 }
 
 // ExtractMetaTags returns meta tag name/property -> content mappings.
 func ExtractMetaTags(body io.Reader) map[string]string {
-	doc, err := html.Parse(body)
-	if err != nil {
-		return nil
-	}
-
-	meta := make(map[string]string)
-	var walk func(*html.Node)
-	walk = func(n *html.Node) {
-		if n.Type == html.ElementNode && n.Data == "meta" {
-			name := getAttr(n, "name")
-			if name == "" {
-				name = getAttr(n, "property")
-			}
-			content := getAttr(n, "content")
-			if name != "" && content != "" {
-				meta[name] = content
-			}
-		}
-		for c := n.FirstChild; c != nil; c = c.NextSibling {
-			walk(c)
-		}
-	}
-	walk(doc)
-	return meta
+	return NewLinkExtractor().ExtractDocument(body, "", "").Meta
 }
 
 // ExtractText returns visible text content from HTML (strips tags).
 func ExtractText(body io.Reader) string {
-	doc, err := html.Parse(body)
-	if err != nil {
-		return ""
-	}
-
-	var sb strings.Builder
-	var walk func(*html.Node)
-	walk = func(n *html.Node) {
-		if n.Type == html.ElementNode {
-			// Skip non-visible elements.
-			switch n.Data {
-			case "script", "style", "noscript", "head":
-				return
-			}
-		}
-		if n.Type == html.TextNode {
-			text := strings.TrimSpace(n.Data)
-			if text != "" {
-				sb.WriteString(text)
-				sb.WriteString(" ")
-			}
-		}
-		for c := n.FirstChild; c != nil; c = c.NextSibling {
-			walk(c)
-		}
-	}
-	walk(doc)
-	return strings.TrimSpace(sb.String())
+	return NewLinkExtractor().ExtractDocument(body, "", "").Text
 }
 
 func getAttr(n *html.Node, key string) string {
