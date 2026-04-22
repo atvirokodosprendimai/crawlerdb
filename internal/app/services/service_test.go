@@ -302,20 +302,60 @@ func TestCrawlService_DispatchURLsRateLimitsPerDomain(t *testing.T) {
 
 	require.NoError(t, urlRepo.Enqueue(ctx, entities.NewCrawlURL(job.ID, "https://example.com", "https://example.com/", "hash1", 0, "")))
 	require.NoError(t, urlRepo.Enqueue(ctx, entities.NewCrawlURL(job.ID, "https://example.com/about", "https://example.com/about", "hash2", 1, "")))
+	require.NoError(t, urlRepo.Enqueue(ctx, entities.NewCrawlURL(job.ID, "https://example.com/contact", "https://example.com/contact", "hash3", 1, "")))
 
-	n, err := crawlSvc.DispatchURLs(ctx, job.ID, job.Config, 10)
+	n, err := crawlSvc.DispatchURLs(ctx, job.ID, job.Config, 1)
 	require.NoError(t, err)
 	assert.Equal(t, 1, n)
 
-	n, err = crawlSvc.DispatchURLs(ctx, job.ID, job.Config, 10)
+	n, err = crawlSvc.DispatchURLs(ctx, job.ID, job.Config, 1)
 	require.NoError(t, err)
 	assert.Equal(t, 0, n)
 
+	claimed, err := urlRepo.FindByHash(ctx, job.ID, "hash1")
+	require.NoError(t, err)
+	require.NotNil(t, claimed)
+	require.NoError(t, claimed.MarkDone())
+	require.NoError(t, urlRepo.Complete(ctx, claimed))
+
 	time.Sleep(25 * time.Millisecond)
 
-	n, err = crawlSvc.DispatchURLs(ctx, job.ID, job.Config, 10)
+	n, err = crawlSvc.DispatchURLs(ctx, job.ID, job.Config, 1)
 	require.NoError(t, err)
 	assert.Equal(t, 1, n)
+}
+
+func TestCrawlService_DispatchURLs_AllowsBurstForSameDomainUpToAvailableCapacity(t *testing.T) {
+	db := setupTestDB(t)
+	b := setupTestNATS(t)
+	jobRepo := store.NewJobRepository(db)
+	urlRepo := store.NewURLRepository(db)
+	pageRepo := store.NewPageRepository(db, store.WithContentDir(filepath.Join(t.TempDir(), "data")))
+	crawlSvc := services.NewCrawlService(jobRepo, urlRepo, pageRepo, b)
+	jobSvc := services.NewJobService(jobRepo, urlRepo, b)
+	ctx := context.Background()
+
+	job, err := jobSvc.CreateJob(ctx, "https://example.com", valueobj.CrawlConfig{
+		Scope:      valueobj.ScopeSameDomain,
+		MaxDepth:   3,
+		Extraction: valueobj.ExtractionStandard,
+		UserAgent:  "TestBot/1.0",
+	})
+	require.NoError(t, err)
+	require.NoError(t, jobSvc.StartJob(ctx, job.ID))
+
+	require.NoError(t, urlRepo.Enqueue(ctx, entities.NewCrawlURL(job.ID, "https://example.com", "https://example.com/", "hash1", 0, "")))
+	require.NoError(t, urlRepo.Enqueue(ctx, entities.NewCrawlURL(job.ID, "https://example.com/about", "https://example.com/about", "hash2", 1, "")))
+	require.NoError(t, urlRepo.Enqueue(ctx, entities.NewCrawlURL(job.ID, "https://example.com/contact", "https://example.com/contact", "hash3", 1, "")))
+
+	n, err := crawlSvc.DispatchURLs(ctx, job.ID, job.Config, 3)
+	require.NoError(t, err)
+	assert.Equal(t, 3, n)
+
+	counts, err := urlRepo.CountByStatus(ctx, job.ID)
+	require.NoError(t, err)
+	assert.Equal(t, 3, counts[entities.URLStatusCrawling])
+	assert.Equal(t, 0, counts[entities.URLStatusPending])
 }
 
 func TestCrawlService_DispatchURLs_DoesNotOverclaimBeyondAvailableCapacity(t *testing.T) {
