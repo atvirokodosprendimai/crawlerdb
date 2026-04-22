@@ -65,6 +65,41 @@ func TestRouter_DashboardPageUsesDefaultMaxDepth(t *testing.T) {
 	assert.Contains(t, w.Body.String(), fmt.Sprintf("maxDepth: %d", valueobj.DefaultAppConfig().Crawler.MaxDepth))
 }
 
+func TestRouter_DashboardDatastarIgnoresMalformedStoredURLs(t *testing.T) {
+	router, db := setupTestRouter(t)
+	ctx := t.Context()
+
+	jobRepo := store.NewJobRepository(db)
+
+	job := entities.NewJob("https://example.com", valueobj.CrawlConfig{
+		Scope:      valueobj.ScopeSameDomain,
+		MaxDepth:   3,
+		Extraction: valueobj.ExtractionStandard,
+	})
+	require.NoError(t, jobRepo.Create(ctx, job))
+
+	urlID := "bad-url-1"
+	pageID := "bad-page-1"
+	now := time.Now().UTC()
+	require.NoError(t, db.Exec(
+		`INSERT INTO urls (id, job_id, raw_url, normalized, url_hash, depth, status, retry_count, revisit_at, found_on, created_at, updated_at, last_error)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		urlID, job.ID, "bad", "https://exa mple.com/bad url", "hash-bad", 1, "done", 0, nil, "", now, now, "",
+	).Error)
+	require.NoError(t, db.Exec(
+		`INSERT INTO pages (id, url_id, job_id, http_status, content_type, content_path, content_size, headers, title, meta_tags, html_body, text_content, structured_data, links, fetch_duration, fetched_at, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		pageID, urlID, job.ID, http.StatusOK, "text/html; charset=utf-8", "", 0, `{}`, "", `{}`, "", "", `[]`, `[]`, 0, now, now,
+	).Error)
+
+	req := httptest.NewRequest("GET", "/api/gui/dashboard", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), "site-table")
+}
+
 func TestRouter_GetJob_NotFound(t *testing.T) {
 	router, _ := setupTestRouter(t)
 	req := httptest.NewRequest("GET", "/api/jobs/nonexistent", nil)

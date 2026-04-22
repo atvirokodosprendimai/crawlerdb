@@ -3,6 +3,7 @@ package gui
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"slices"
 	"strings"
 	"time"
@@ -611,6 +612,26 @@ func foundOn(value string) string {
 		return "seed"
 	}
 	return value
+}
+
+func safeDashboardHref(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "#"
+	}
+	if strings.HasPrefix(raw, "/") {
+		return raw
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return "#"
+	}
+	switch strings.ToLower(parsed.Scheme) {
+	case "http", "https":
+		return raw
+	default:
+		return "#"
+	}
 }
 
 func exceptionReason(item *entities.CrawlURL) string {

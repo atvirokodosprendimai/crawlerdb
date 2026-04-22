@@ -204,7 +204,7 @@ templ DashboardRoot(view dashboardView) {
                                     <tr>
                                         <td><span class={ statusClass(string(item.Status)) }>{ string(item.Status) }</span></td>
                                         <td class="url-cell">
-                                            <a class="url-line" href={ item.Normalized } target="_blank" rel="noreferrer">{ item.Normalized }</a>
+                                            <a class="url-line" href={ safeDashboardHref(item.Normalized) } target="_blank" rel="noreferrer">{ item.Normalized }</a>
                                             <span class="context-line">depth { formatNumber(item.Depth) } · found on { foundOn(item.FoundOn) }</span>
                                         </td>
                                         <td><div class="reason">{ exceptionReason(item) }</div></td>
@@ -322,7 +322,7 @@ templ DashboardRoot(view dashboardView) {
                                 <tr>
                                     <td><span class={ statusClass(item.Status) }>{ item.Status }</span></td>
                                     <td class="url-cell">
-                                        <a class="url-line" href={ item.Normalized } target="_blank" rel="noreferrer">{ item.Normalized }</a>
+                                        <a class="url-line" href={ safeDashboardHref(item.Normalized) } target="_blank" rel="noreferrer">{ item.Normalized }</a>
                                         <span class="context-line">depth { formatNumber(item.Depth) } · found on { foundOn(item.FoundOn) }</span>
                                     </td>
                                     <td>
@@ -341,7 +341,7 @@ templ DashboardRoot(view dashboardView) {
                                     <td>{ formatNumber(item.Depth) }</td>
                                     <td>
                                         if item.FileURL != "" {
-                                            <a class="file-link" href={ item.FileURL } target="_blank" rel="noreferrer">Open file</a>
+                                            <a class="file-link" href={ safeDashboardHref(item.FileURL) } target="_blank" rel="noreferrer">Open file</a>
                                             <span class="context-line">{ formatBytes(item.ContentSize) }</span>
                                         } else {
                                             <span class="muted-inline">—</span>

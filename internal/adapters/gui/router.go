@@ -519,6 +519,9 @@ func writeJSON(w http.ResponseWriter, v any) {
 }
 
 func writeError(w http.ResponseWriter, err error, code int) {
+	if err != nil && code >= http.StatusInternalServerError {
+		slog.Error("gui request failed", "status", code, "err", err)
+	}
 	w.WriteHeader(code)
 	msg := "not found"
 	if err != nil {

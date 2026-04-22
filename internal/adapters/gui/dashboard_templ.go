@@ -736,9 +736,9 @@ func DashboardRoot(view dashboardView) templ.Component {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var51 templ.SafeURL
-				templ_7745c5c3_Var51, templ_7745c5c3_Err = templ.JoinURLErrs(item.Normalized)
+				templ_7745c5c3_Var51, templ_7745c5c3_Err = templ.JoinURLErrs(safeDashboardHref(item.Normalized))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/gui/dashboard.templ`, Line: 207, Col: 86}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/gui/dashboard.templ`, Line: 207, Col: 105}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var51))
 				if templ_7745c5c3_Err != nil {
@@ -751,7 +751,7 @@ func DashboardRoot(view dashboardView) templ.Component {
 				var templ_7745c5c3_Var52 string
 				templ_7745c5c3_Var52, templ_7745c5c3_Err = templ.JoinStringErrs(item.Normalized)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/gui/dashboard.templ`, Line: 207, Col: 139}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/gui/dashboard.templ`, Line: 207, Col: 158}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var52))
 				if templ_7745c5c3_Err != nil {
@@ -1075,9 +1075,9 @@ func DashboardRoot(view dashboardView) templ.Component {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var72 templ.SafeURL
-				templ_7745c5c3_Var72, templ_7745c5c3_Err = templ.JoinURLErrs(item.Normalized)
+				templ_7745c5c3_Var72, templ_7745c5c3_Err = templ.JoinURLErrs(safeDashboardHref(item.Normalized))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/gui/dashboard.templ`, Line: 325, Col: 82}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/gui/dashboard.templ`, Line: 325, Col: 101}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var72))
 				if templ_7745c5c3_Err != nil {
@@ -1090,7 +1090,7 @@ func DashboardRoot(view dashboardView) templ.Component {
 				var templ_7745c5c3_Var73 string
 				templ_7745c5c3_Var73, templ_7745c5c3_Err = templ.JoinStringErrs(item.Normalized)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/gui/dashboard.templ`, Line: 325, Col: 135}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/gui/dashboard.templ`, Line: 325, Col: 154}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var73))
 				if templ_7745c5c3_Err != nil {
@@ -1211,9 +1211,9 @@ func DashboardRoot(view dashboardView) templ.Component {
 						return templ_7745c5c3_Err
 					}
 					var templ_7745c5c3_Var80 templ.SafeURL
-					templ_7745c5c3_Var80, templ_7745c5c3_Err = templ.JoinURLErrs(item.FileURL)
+					templ_7745c5c3_Var80, templ_7745c5c3_Err = templ.JoinURLErrs(safeDashboardHref(item.FileURL))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/gui/dashboard.templ`, Line: 344, Col: 84}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/gui/dashboard.templ`, Line: 344, Col: 103}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var80))
 					if templ_7745c5c3_Err != nil {
