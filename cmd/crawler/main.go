@@ -101,12 +101,16 @@ func main() {
 		fetcher.WithUserAgent(cfg.Crawler.UserAgent),
 		fetcher.WithTimeout(cfg.Crawler.RequestTimeout.Duration),
 	)
+	var chromiumFetcher *fetcher.ChromiumFetcher
+	if cfg.Crawler.ChromiumURL != "" {
+		chromiumFetcher = fetcher.NewChromium(cfg.Crawler.ChromiumURL, cfg.Crawler.UserAgent, cfg.Crawler.RequestTimeout.Duration*2)
+	}
 	robotsChecker := robots.NewChecker(httpFetcher, cfg.Crawler.UserAgent, cfg.Crawler.RobotsTTL.Duration)
 	rateLimiter := fetcher.NewAdaptiveRateLimiter(cfg.Crawler.DefaultRateLimit.Duration)
 	detector := antibot.NewDetector()
 	ext := extraction.NewExtractor()
 
-	workerSvc := services.NewWorkerService(httpFetcher, robotsChecker, rateLimiter, detector, mb, cfg.Crawler.ContentDir, cfg.Crawler.PoolSize, logger)
+	workerSvc := services.NewWorkerService(httpFetcher, chromiumFetcher, robotsChecker, rateLimiter, detector, mb, cfg.Crawler.ContentDir, cfg.Crawler.PoolSize, logger)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()

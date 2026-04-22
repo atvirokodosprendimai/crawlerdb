@@ -22,20 +22,22 @@ import (
 
 // WorkerService runs the crawler worker: receives URLs, fetches, extracts, reports.
 type WorkerService struct {
-	fetcher     ports.Fetcher
-	robots      ports.RobotsChecker
-	rateLimiter ports.RateLimiter
-	detector    ports.AntiBotDetector
-	msgBroker   ports.MessageBroker
-	extractor   *extraction.Extractor
-	contentDir  string
-	poolSize    int
-	logger      *slog.Logger
+	fetcher         ports.Fetcher
+	fallbackFetcher ports.Fetcher
+	robots          ports.RobotsChecker
+	rateLimiter     ports.RateLimiter
+	detector        ports.AntiBotDetector
+	msgBroker       ports.MessageBroker
+	extractor       *extraction.Extractor
+	contentDir      string
+	poolSize        int
+	logger          *slog.Logger
 }
 
 // NewWorkerService creates a new worker service.
 func NewWorkerService(
 	f ports.Fetcher,
+	fallback ports.Fetcher,
 	robots ports.RobotsChecker,
 	rl ports.RateLimiter,
 	detector ports.AntiBotDetector,
@@ -48,15 +50,16 @@ func NewWorkerService(
 		logger = slog.Default()
 	}
 	return &WorkerService{
-		fetcher:     f,
-		robots:      robots,
-		rateLimiter: rl,
-		detector:    detector,
-		msgBroker:   mb,
-		extractor:   extraction.NewExtractor(),
-		contentDir:  contentDir,
-		poolSize:    poolSize,
-		logger:      logger,
+		fetcher:         f,
+		fallbackFetcher: fallback,
+		robots:          robots,
+		rateLimiter:     rl,
+		detector:        detector,
+		msgBroker:       mb,
+		extractor:       extraction.NewExtractor(),
+		contentDir:      contentDir,
+		poolSize:        poolSize,
+		logger:          logger,
 	}
 }
 
@@ -112,15 +115,23 @@ func (w *WorkerService) ProcessTask(ctx context.Context, task CrawlTask) *entiti
 	resp, err := w.fetcher.Fetch(ctx, task.URL)
 	fetchDuration := time.Since(start)
 	if err != nil {
-		result.Error = fmt.Sprintf("fetch: %v", err)
-		w.rateLimiter.RecordResponse(domain, 0, fetchDuration)
 		w.logger.Debug("fetch failed",
 			"url", task.URL,
 			"domain", domain,
 			"duration_ms", fetchDuration.Milliseconds(),
 			"err", err,
 		)
-		return result
+		if w.fallbackFetcher == nil {
+			result.Error = fmt.Sprintf("fetch: %v", err)
+			w.rateLimiter.RecordResponse(domain, 0, fetchDuration)
+			return result
+		}
+		resp, fetchDuration, err = w.fetchWith(task, ctx, w.fallbackFetcher)
+		if err != nil {
+			result.Error = fmt.Sprintf("fetch: %v", err)
+			w.rateLimiter.RecordResponse(domain, 0, fetchDuration)
+			return result
+		}
 	}
 	w.logger.Debug("fetch complete",
 		"url", task.URL,
@@ -153,6 +164,20 @@ func (w *WorkerService) ProcessTask(ctx context.Context, task CrawlTask) *entiti
 				"event", detection.EventType,
 				"provider", detection.Provider,
 			)
+			if w.fallbackFetcher != nil {
+				fallbackResp, fallbackDuration, fallbackErr := w.fetchWith(task, ctx, w.fallbackFetcher)
+				if fallbackErr == nil {
+					resp = fallbackResp
+					fetchDuration = fallbackDuration
+					body, err = extraction.ReadBody(resp.Body)
+					if err == nil {
+						detection = w.detector.Analyze(resp, body)
+						if !detection.Detected {
+							goto extract
+						}
+					}
+				}
+			}
 			result.Error = fmt.Sprintf("anti-bot: %s (%s)", detection.EventType, detection.Provider)
 			result.AntiBotEvent = &entities.AntiBotDetection{
 				Detected:  detection.Detected,
@@ -164,6 +189,7 @@ func (w *WorkerService) ProcessTask(ctx context.Context, task CrawlTask) *entiti
 		}
 	}
 
+extract:
 	// Extract content.
 	profile := valueobj.ExtractionProfile{Level: task.Config.Extraction}
 	page := w.extractor.Extract(resp, body, task.URLID, task.JobID, task.URL, task.SeedHost, profile, fetchDuration)
@@ -190,6 +216,12 @@ func (w *WorkerService) ProcessTask(ctx context.Context, task CrawlTask) *entiti
 	)
 
 	return result
+}
+
+func (w *WorkerService) fetchWith(task CrawlTask, ctx context.Context, fetcher ports.Fetcher) (*ports.FetchResponse, time.Duration, error) {
+	start := time.Now()
+	resp, err := fetcher.Fetch(ctx, task.URL)
+	return resp, time.Since(start), err
 }
 
 func shouldStageContent(page *entities.Page) bool {

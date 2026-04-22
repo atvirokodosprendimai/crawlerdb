@@ -38,6 +38,7 @@ type CrawlerDefaults struct {
 	DomainConcurrency int      `toml:"domain_concurrency"`
 	DataDir           string   `toml:"data_dir"`
 	ContentDir        string   `toml:"content_dir"`
+	ChromiumURL       string   `toml:"chromium_url"`
 }
 
 // ServerConfig holds GUI HTTP server settings.
@@ -71,6 +72,7 @@ func DefaultAppConfig() AppConfig {
 			DomainConcurrency: 2,
 			DataDir:           ".crawlerdb",
 			ContentDir:        "data",
+			ChromiumURL:       "",
 		},
 		Server: ServerConfig{
 			Addr: ":8081",
