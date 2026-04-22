@@ -128,6 +128,40 @@ func TestJobService_StartPauseResumeStop(t *testing.T) {
 	assert.Equal(t, entities.JobStatusStopped, found.Status)
 }
 
+func TestJobService_StopJob_RequeuesCrawlingURLs(t *testing.T) {
+	db := setupTestDB(t)
+	b := setupTestNATS(t)
+	jobRepo := store.NewJobRepository(db)
+	urlRepo := store.NewURLRepository(db)
+	svc := services.NewJobService(jobRepo, urlRepo, b)
+	ctx := context.Background()
+
+	job, err := svc.CreateJob(ctx, "https://example.com", testConfig())
+	require.NoError(t, err)
+	require.NoError(t, svc.StartJob(ctx, job.ID))
+
+	u1 := entities.NewCrawlURL(job.ID, "https://example.com", "https://example.com/", "hash1", 0, "")
+	u2 := entities.NewCrawlURL(job.ID, "https://example.com/about", "https://example.com/about", "hash2", 1, "")
+	require.NoError(t, urlRepo.Enqueue(ctx, u1))
+	require.NoError(t, urlRepo.Enqueue(ctx, u2))
+
+	claimed, err := urlRepo.Claim(ctx, job.ID, 2)
+	require.NoError(t, err)
+	require.Len(t, claimed, 2)
+
+	require.NoError(t, svc.StopJob(ctx, job.ID))
+
+	found, err := svc.GetJob(ctx, job.ID)
+	require.NoError(t, err)
+	require.NotNil(t, found)
+	assert.Equal(t, entities.JobStatusStopped, found.Status)
+
+	counts, err := urlRepo.CountByStatus(ctx, job.ID)
+	require.NoError(t, err)
+	assert.Equal(t, 2, counts[entities.URLStatusPending])
+	assert.Equal(t, 0, counts[entities.URLStatusCrawling])
+}
+
 func TestJobService_ListJobs(t *testing.T) {
 	db := setupTestDB(t)
 	b := setupTestNATS(t)

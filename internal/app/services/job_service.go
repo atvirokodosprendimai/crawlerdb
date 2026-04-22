@@ -110,7 +110,26 @@ func (s *JobService) ResumeJob(ctx context.Context, jobID string) error {
 
 // StopJob stops a running or paused job.
 func (s *JobService) StopJob(ctx context.Context, jobID string) error {
-	return s.transitionJob(ctx, jobID, func(j *entities.Job) error { return j.Stop() })
+	job, err := s.jobRepo.FindByID(ctx, jobID)
+	if err != nil {
+		return fmt.Errorf("find job: %w", err)
+	}
+	if job == nil {
+		return fmt.Errorf("job %s not found", jobID)
+	}
+
+	if err := job.Stop(); err != nil {
+		return err
+	}
+	if _, err := s.urlRepo.RequeueCrawlingByJob(ctx, jobID); err != nil {
+		return fmt.Errorf("requeue crawling URLs for stopped job: %w", err)
+	}
+	if err := s.jobRepo.Update(ctx, job); err != nil {
+		return fmt.Errorf("update job: %w", err)
+	}
+
+	s.publishJobUpdate(ctx, job)
+	return nil
 }
 
 // CompleteJob marks a job as completed.
