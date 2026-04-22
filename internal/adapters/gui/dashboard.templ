@@ -49,7 +49,7 @@ templ DashboardPage() {
 }
 
 templ DashboardRefreshTrigger(token string) {
-    <div data-refresh-token={ token } data-init="@get('/api/gui/dashboard', {openWhenHidden: true})"></div>
+    <div data-refresh-token={ token } data-init={ refreshDashboardTriggerExpr(token) }></div>
 }
 
 templ DashboardRoot(view dashboardView) {
