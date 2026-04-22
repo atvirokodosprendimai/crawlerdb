@@ -15,6 +15,14 @@ import (
 	"github.com/ledongthuc/pdf"
 )
 
+var pdfPlainTextReader = func(body []byte) (io.Reader, error) {
+	reader, err := pdf.NewReader(bytes.NewReader(body), int64(len(body)))
+	if err != nil {
+		return nil, err
+	}
+	return reader.GetPlainText()
+}
+
 // Extractor processes an HTTP response into a Page entity.
 type Extractor struct {
 	linkExtractor *fetcher.LinkExtractor
@@ -93,20 +101,22 @@ func ExtractSearchText(contentType string, body []byte) string {
 	}
 }
 
-func extractPDFSearchText(body []byte) string {
-	reader, err := pdf.NewReader(bytes.NewReader(body), int64(len(body)))
+func extractPDFSearchText(body []byte) (text string) {
+	defer func() {
+		if recover() != nil {
+			text = ""
+		}
+	}()
+
+	textReader, err := pdfPlainTextReader(body)
 	if err != nil {
 		return ""
 	}
-	textReader, err := reader.GetPlainText()
+	plainText, err := io.ReadAll(textReader)
 	if err != nil {
 		return ""
 	}
-	text, err := io.ReadAll(textReader)
-	if err != nil {
-		return ""
-	}
-	return normalizeSearchText(string(text))
+	return normalizeSearchText(string(plainText))
 }
 
 func normalizeSearchText(value string) string {
