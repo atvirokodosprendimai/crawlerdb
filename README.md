@@ -412,8 +412,17 @@ Crawler currently walks only:
 
 - `a[href]`
 - `link[href]`
+- `img[src]`, `img[data-src]`, `img[srcset]`, `img[data-srcset]`
+- `source[src]`, `source[data-src]`, `source[srcset]`, `source[data-srcset]`
+- `script[src]`
+- `iframe[src]`
+- `audio[src]`
+- `video[src]`
+- `track[src]`
+- `embed[src]`
+- `object[data]`
 
-It does not enqueue `img[src]`, `script[src]`, `video[src]`, or similar asset tags.
+Discovered URLs are deduped per page by normalized URL before enqueue.
 
 ### Malformed old-site links
 

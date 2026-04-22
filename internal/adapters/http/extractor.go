@@ -35,34 +35,29 @@ func (e *LinkExtractor) ExtractLinks(body io.Reader, pageURL, seedHost string) [
 	var walk func(*html.Node)
 	walk = func(n *html.Node) {
 		if n.Type == html.ElementNode {
-			var href, rel, anchor string
-
-			switch n.Data {
-			case "a":
-				href = getAttr(n, "href")
-				rel = getAttr(n, "rel")
-				anchor = extractText(n)
-			case "link":
-				href = getAttr(n, "href")
-				rel = getAttr(n, "rel")
-			}
-
-			if href != "" && !isIgnoredScheme(href) {
-				norm, err := e.normalizer.Normalize(href, pageURL)
-				if err == nil {
-					if _, ok := seen[norm.Hash]; !ok {
-						seen[norm.Hash] = struct{}{}
-						link := entities.DiscoveredLink{
-							RawURL:     href,
-							Normalized: norm.Normalized,
-							URLHash:    norm.Hash,
-							IsExternal: !e.normalizer.IsInternal(norm.Normalized, seedHost),
-							Rel:        rel,
-							Anchor:     strings.TrimSpace(anchor),
-						}
-						links = append(links, link)
-					}
+			for _, ref := range extractNodeReferences(n) {
+				if ref.href == "" || isIgnoredScheme(ref.href) {
+					continue
 				}
+
+				norm, err := e.normalizer.Normalize(ref.href, pageURL)
+				if err != nil {
+					continue
+				}
+				if _, ok := seen[norm.Hash]; ok {
+					continue
+				}
+
+				seen[norm.Hash] = struct{}{}
+				link := entities.DiscoveredLink{
+					RawURL:     ref.href,
+					Normalized: norm.Normalized,
+					URLHash:    norm.Hash,
+					IsExternal: !e.normalizer.IsInternal(norm.Normalized, seedHost),
+					Rel:        ref.rel,
+					Anchor:     strings.TrimSpace(ref.anchor),
+				}
+				links = append(links, link)
 			}
 		}
 
@@ -73,6 +68,76 @@ func (e *LinkExtractor) ExtractLinks(body io.Reader, pageURL, seedHost string) [
 	walk(doc)
 
 	return links
+}
+
+type extractedReference struct {
+	href   string
+	rel    string
+	anchor string
+}
+
+func extractNodeReferences(n *html.Node) []extractedReference {
+	var refs []extractedReference
+	seen := make(map[string]struct{})
+
+	appendRef := func(rawURL, rel, anchor string) {
+		rawURL = strings.TrimSpace(rawURL)
+		if rawURL == "" {
+			return
+		}
+		if _, ok := seen[rawURL]; ok {
+			return
+		}
+		seen[rawURL] = struct{}{}
+		refs = append(refs, extractedReference{
+			href:   rawURL,
+			rel:    rel,
+			anchor: anchor,
+		})
+	}
+
+	appendSrcset := func(raw string) {
+		for _, candidate := range parseSrcset(raw) {
+			appendRef(candidate, "", "")
+		}
+	}
+
+	switch n.Data {
+	case "a":
+		appendRef(getAttr(n, "href"), getAttr(n, "rel"), extractText(n))
+	case "link":
+		appendRef(getAttr(n, "href"), getAttr(n, "rel"), "")
+		appendSrcset(getAttr(n, "imagesrcset"))
+	case "img", "source":
+		appendRef(getAttr(n, "src"), "", "")
+		appendRef(getAttr(n, "data-src"), "", "")
+		appendSrcset(getAttr(n, "srcset"))
+		appendSrcset(getAttr(n, "data-srcset"))
+	case "script", "iframe", "audio", "video", "track", "embed":
+		appendRef(getAttr(n, "src"), "", "")
+		appendRef(getAttr(n, "data-src"), "", "")
+	case "object":
+		appendRef(getAttr(n, "data"), "", "")
+	}
+
+	return refs
+}
+
+func parseSrcset(raw string) []string {
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		fields := strings.Fields(strings.TrimSpace(part))
+		if len(fields) == 0 {
+			continue
+		}
+		out = append(out, fields[0])
+	}
+	return out
 }
 
 // ExtractTitle returns the <title> text from HTML.

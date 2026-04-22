@@ -2,6 +2,7 @@ package gui_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -51,6 +52,17 @@ func TestRouter_ListJobs_Empty(t *testing.T) {
 	router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+func TestRouter_DashboardPageUsesDefaultMaxDepth(t *testing.T) {
+	router, _ := setupTestRouter(t)
+	req := httptest.NewRequest("GET", "/", nil)
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), fmt.Sprintf("maxDepth: %d", valueobj.DefaultAppConfig().Crawler.MaxDepth))
 }
 
 func TestRouter_GetJob_NotFound(t *testing.T) {

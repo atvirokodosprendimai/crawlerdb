@@ -26,6 +26,9 @@ const testHTML = `<!DOCTYPE html>
   <a href="javascript:void(0)">JS Link</a>
   <a href="mailto:test@example.com">Email</a>
   <a href="/about">Duplicate About</a>
+  <video src="/media/intro.mp4"></video>
+  <source src="/media/intro-hd.mp4" srcset="/media/intro-sd.mp4 1x, /media/intro-4k.mp4 2x" type="video/mp4">
+  <img src="/images/photo.jpg" srcset="/images/photo@2x.jpg 2x">
   <script>var x = 1;</script>
   <style>.hidden { display: none; }</style>
 </body>
@@ -35,9 +38,9 @@ func TestExtractLinks(t *testing.T) {
 	ext := fetcher.NewLinkExtractor()
 	links := ext.ExtractLinks(strings.NewReader(testHTML), "https://example.com/page", "example.com")
 
-	// Should find: /styles.css, /about, /contact, external.com/page, example.com/internal
-	// Should skip: javascript:, mailto:, duplicate /about
-	assert.Len(t, links, 5)
+	// Should find href links plus discovered media/image URLs.
+	// Should skip javascript:, mailto:, duplicate /about.
+	assert.Len(t, links, 11)
 
 	// Check external classification.
 	var externalCount int
@@ -91,4 +94,26 @@ func TestExtractLinks_RelativeURLs(t *testing.T) {
 	links := ext.ExtractLinks(strings.NewReader(html), "https://example.com/dir/page", "example.com")
 
 	assert.GreaterOrEqual(t, len(links), 2)
+}
+
+func TestExtractLinks_SrcsetAndLazyURLsDedupedByNormalizedURL(t *testing.T) {
+	html := `<html><body>
+		<img src="/images/a.jpg" srcset="/images/a.jpg 1x, /images/b.jpg 2x">
+		<img data-src="/images/c.jpg" data-srcset="/images/c.jpg 1x, /images/d.jpg 2x">
+	</body></html>`
+
+	ext := fetcher.NewLinkExtractor()
+	links := ext.ExtractLinks(strings.NewReader(html), "https://example.com/page", "example.com")
+
+	var got []string
+	for _, link := range links {
+		got = append(got, link.Normalized)
+	}
+
+	assert.ElementsMatch(t, []string{
+		"https://example.com/images/a.jpg",
+		"https://example.com/images/b.jpg",
+		"https://example.com/images/c.jpg",
+		"https://example.com/images/d.jpg",
+	}, got)
 }

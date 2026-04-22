@@ -10,6 +10,7 @@ import (
 	store "github.com/atvirokodosprendimai/crawlerdb/internal/adapters/db/gorm"
 	"github.com/atvirokodosprendimai/crawlerdb/internal/domain/entities"
 	"github.com/atvirokodosprendimai/crawlerdb/internal/domain/ports"
+	"github.com/atvirokodosprendimai/crawlerdb/internal/domain/valueobj"
 	"gorm.io/gorm"
 )
 
@@ -119,13 +120,24 @@ type dashboardStateLoader struct {
 	urlRepo ports.URLRepository
 }
 
+func defaultDashboardMaxDepth() int {
+	return valueobj.DefaultAppConfig().Crawler.MaxDepth
+}
+
+func initialDashboardSignals() string {
+	return fmt.Sprintf(
+		"{selectedJobId: '', exceptionsOffset: 0, siteOffset: 0, siteQuery: '', siteStatus: 'all', siteContent: 'all', siteDepth: 'all', seedUrl: '', scope: 'same_domain', maxDepth: %d}",
+		defaultDashboardMaxDepth(),
+	)
+}
+
 func defaultDashboardSignals() dashboardSignals {
 	return dashboardSignals{
 		SiteStatus:  "all",
 		SiteContent: "all",
 		SiteDepth:   "all",
 		Scope:       "same_domain",
-		MaxDepth:    3,
+		MaxDepth:    defaultDashboardMaxDepth(),
 	}
 }
 
@@ -143,7 +155,7 @@ func normalizeDashboardSignals(signals *dashboardSignals) {
 		signals.Scope = "same_domain"
 	}
 	if signals.MaxDepth <= 0 {
-		signals.MaxDepth = 3
+		signals.MaxDepth = defaultDashboardMaxDepth()
 	}
 	if signals.ExceptionsOffset < 0 {
 		signals.ExceptionsOffset = 0

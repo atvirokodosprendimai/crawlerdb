@@ -10,7 +10,7 @@ templ DashboardPage() {
             <link rel="stylesheet" href="/assets/dashboard.css"/>
             <script type="module" src="https://cdn.jsdelivr.net/gh/starfederation/datastar@v1.0.1/bundles/datastar.js"></script>
         </head>
-        <body data-signals="{selectedJobId: '', exceptionsOffset: 0, siteOffset: 0, siteQuery: '', siteStatus: 'all', siteContent: 'all', siteDepth: 'all', seedUrl: '', scope: 'same_domain', maxDepth: 3}">
+        <body data-signals={ initialDashboardSignals() }>
             <div class="shell">
                 <div class="topbar">
                     <div class="panel topbar-card">
@@ -97,7 +97,7 @@ templ DashboardRoot(view dashboardView) {
                         </label>
                         <label>
                             Max depth
-                            <input type="number" data-bind:max-depth value="3" min="1" max="20"/>
+                            <input type="number" data-bind:max-depth value={ formatNumber(defaultDashboardMaxDepth()) } min="1" max="20"/>
                         </label>
                     </div>
                     <button type="submit" class="btn btn-primary">Start new crawl</button>
