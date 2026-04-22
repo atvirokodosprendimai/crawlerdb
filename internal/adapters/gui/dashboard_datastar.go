@@ -330,6 +330,7 @@ func (h *datastarDashboardHandlers) handleEvents(w http.ResponseWriter, r *http.
 				return
 			}
 			_ = sse.PatchElements(html, datastar.WithSelector("#event-stream"), datastar.WithMode(datastar.ElementPatchModePrepend))
+			_ = sse.ExecuteScript("document.getElementById('dashboard-root')?.dispatchEvent(new CustomEvent('dashboard-refresh', { bubbles: true }))")
 		}
 	}
 }

@@ -63,6 +63,8 @@ func TestRouter_DashboardPageUsesDefaultMaxDepth(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, w.Code)
 	assert.Contains(t, w.Body.String(), fmt.Sprintf("maxDepth: %d", valueobj.DefaultAppConfig().Crawler.MaxDepth))
+	assert.Contains(t, w.Body.String(), "data-on:dashboard-refresh")
+	assert.NotContains(t, w.Body.String(), "data-on-interval__duration.2s")
 }
 
 func TestRouter_DashboardDatastarIgnoresMalformedStoredURLs(t *testing.T) {

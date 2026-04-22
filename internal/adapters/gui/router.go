@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -519,7 +520,7 @@ func writeJSON(w http.ResponseWriter, v any) {
 }
 
 func writeError(w http.ResponseWriter, err error, code int) {
-	if err != nil && code >= http.StatusInternalServerError {
+	if err != nil && code >= http.StatusInternalServerError && !isExpectedRequestAbort(err) {
 		slog.Error("gui request failed", "status", code, "err", err)
 	}
 	w.WriteHeader(code)
@@ -528,6 +529,10 @@ func writeError(w http.ResponseWriter, err error, code int) {
 		msg = err.Error()
 	}
 	json.NewEncoder(w).Encode(map[string]string{"error": msg})
+}
+
+func isExpectedRequestAbort(err error) bool {
+	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
 }
 
 func parsePositiveInt(raw string, fallback int) int {

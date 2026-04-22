@@ -23,7 +23,7 @@ templ DashboardPage() {
                         </div>
                     </div>
                 </div>
-                <div id="dashboard-root" data-init={ refreshDashboardExpr() } data-on-interval__duration.2s={ refreshDashboardExpr() }>
+                <div id="dashboard-root" data-init={ refreshDashboardExpr() } data-on:dashboard-refresh={ refreshDashboardExpr() }>
                     <div class="panel section">
                         <div class="empty">Loading dashboard…</div>
                     </div>
