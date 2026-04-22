@@ -301,8 +301,30 @@ func main() {
 				jobs, _ := jobSvc.ListJobs(ctx, 100, 0)
 				for _, job := range jobs {
 					if job.Status == entities.JobStatusRunning {
-						dispatched := 0
+						exhausted := int64(0)
 						err := retrySQLiteBusy(ctx, 4, 200*time.Millisecond, func() error {
+							var err error
+							exhausted, err = urlRepo.FailPendingOverRetryLimit(ctx, job.ID, cfg.Crawler.MaxRetries)
+							return err
+						})
+						if err != nil {
+							logger.Error("fail pending URLs over retry limit",
+								"job_id", job.ID,
+								"max_retries", cfg.Crawler.MaxRetries,
+								"err", err,
+							)
+							continue
+						}
+						if exhausted > 0 {
+							logger.Warn("marked pending URLs as error after retry exhaustion",
+								"job_id", job.ID,
+								"count", exhausted,
+								"max_retries", cfg.Crawler.MaxRetries,
+							)
+						}
+
+						dispatched := 0
+						err = retrySQLiteBusy(ctx, 4, 200*time.Millisecond, func() error {
 							var err error
 							dispatched, err = crawlSvc.DispatchURLs(ctx, job.ID, job.Config, cfg.Crawler.PoolSize)
 							return err
@@ -396,13 +418,26 @@ func main() {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				requeued, err := urlRepo.RequeueTimedOutCrawling(ctx, time.Now().Add(-crawlTimeout))
+				var requeued int64
+				var failed int64
+				err := retrySQLiteBusy(ctx, 4, 200*time.Millisecond, func() error {
+					var err error
+					requeued, failed, err = urlRepo.RequeueTimedOutCrawlingWithLimit(ctx, time.Now().Add(-crawlTimeout), cfg.Crawler.MaxRetries)
+					return err
+				})
 				if err != nil {
 					logger.Error("requeue timed out crawling URLs", "err", err)
 					continue
 				}
 				if requeued > 0 {
 					logger.Warn("requeued timed out crawling URLs", "count", requeued, "timeout", crawlTimeout)
+				}
+				if failed > 0 {
+					logger.Warn("marked timed out crawling URLs as error after retry exhaustion",
+						"count", failed,
+						"timeout", crawlTimeout,
+						"max_retries", cfg.Crawler.MaxRetries,
+					)
 				}
 			}
 		}

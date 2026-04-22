@@ -349,15 +349,68 @@ func (r *URLRepository) RequeueCrawlingByJob(ctx context.Context, jobID string) 
 }
 
 func (r *URLRepository) RequeueTimedOutCrawling(ctx context.Context, before time.Time) (int64, error) {
+	requeued, _, err := r.RequeueTimedOutCrawlingWithLimit(ctx, before, 0)
+	return requeued, err
+}
+
+func (r *URLRepository) RequeueTimedOutCrawlingWithLimit(ctx context.Context, before time.Time, maxRetries int) (int64, int64, error) {
 	now := time.Now().UTC()
-	result := r.db.WithContext(ctx).
-		Model(&URLModel{}).
-		Where("status = ? AND updated_at < ?", string(entities.URLStatusCrawling), before).
-		Updates(map[string]any{
+	timeoutMsg := fmt.Sprintf("crawl timeout after %s", now.Sub(before).Round(time.Second))
+
+	var requeued int64
+	var failed int64
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if maxRetries > 0 {
+			result := tx.Model(&URLModel{}).
+				Where("status = ? AND updated_at < ? AND retry_count + 1 >= ?", string(entities.URLStatusCrawling), before, maxRetries).
+				Updates(map[string]any{
+					"status":      string(entities.URLStatusError),
+					"retry_count": gorm.Expr("retry_count + 1"),
+					"updated_at":  now,
+					"last_error":  timeoutMsg + "; max retries exceeded",
+				})
+			if result.Error != nil {
+				return result.Error
+			}
+			failed = result.RowsAffected
+		}
+
+		query := tx.Model(&URLModel{}).
+			Where("status = ? AND updated_at < ?", string(entities.URLStatusCrawling), before)
+		if maxRetries > 0 {
+			query = query.Where("retry_count + 1 < ?", maxRetries)
+		}
+		result := query.Updates(map[string]any{
 			"status":      string(entities.URLStatusPending),
 			"retry_count": gorm.Expr("retry_count + 1"),
 			"updated_at":  now,
-			"last_error":  fmt.Sprintf("crawl timeout after %s; requeued", now.Sub(before).Round(time.Second)),
+			"last_error":  timeoutMsg + "; requeued",
+		})
+		if result.Error != nil {
+			return result.Error
+		}
+		requeued = result.RowsAffected
+		return nil
+	})
+	if err != nil {
+		return 0, 0, err
+	}
+	return requeued, failed, nil
+}
+
+func (r *URLRepository) FailPendingOverRetryLimit(ctx context.Context, jobID string, maxRetries int) (int64, error) {
+	if maxRetries <= 0 {
+		return 0, nil
+	}
+
+	now := time.Now().UTC()
+	result := r.db.WithContext(ctx).
+		Model(&URLModel{}).
+		Where("job_id = ? AND status = ? AND retry_count >= ?", jobID, string(entities.URLStatusPending), maxRetries).
+		Updates(map[string]any{
+			"status":     string(entities.URLStatusError),
+			"updated_at": now,
+			"last_error": fmt.Sprintf("max retries exceeded (%d); skipped before dispatch", maxRetries),
 		})
 	if result.Error != nil {
 		return 0, result.Error

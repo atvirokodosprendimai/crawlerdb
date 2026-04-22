@@ -321,6 +321,74 @@ func TestURLRepository_RequeueTimedOutCrawling(t *testing.T) {
 	assert.Contains(t, found.LastError, "crawl timeout")
 }
 
+func TestURLRepository_RequeueTimedOutCrawlingWithLimitMarksErrorsAfterRetryExhaustion(t *testing.T) {
+	jobs, urls, _ := setupDB(t)
+	ctx := context.Background()
+
+	job := newJob()
+	require.NoError(t, jobs.Create(ctx, job))
+
+	u := entities.NewCrawlURL(job.ID, "https://example.com", "https://example.com/", "hash1", 0, "")
+	require.NoError(t, urls.Enqueue(ctx, u))
+
+	claimed, err := urls.Claim(ctx, job.ID, 1)
+	require.NoError(t, err)
+	require.Len(t, claimed, 1)
+
+	staleAt := time.Now().Add(-2 * time.Minute).UTC()
+	require.NoError(t, urls.Complete(ctx, &entities.CrawlURL{
+		ID:         claimed[0].ID,
+		JobID:      claimed[0].JobID,
+		Normalized: claimed[0].Normalized,
+		Depth:      claimed[0].Depth,
+		Status:     entities.URLStatusCrawling,
+		RetryCount: 2,
+		UpdatedAt:  staleAt,
+	}))
+
+	requeued, failed, err := urls.RequeueTimedOutCrawlingWithLimit(ctx, time.Now().Add(-1*time.Minute), 3)
+	require.NoError(t, err)
+	assert.Equal(t, int64(0), requeued)
+	assert.Equal(t, int64(1), failed)
+
+	found, err := urls.FindByHash(ctx, job.ID, "hash1")
+	require.NoError(t, err)
+	require.NotNil(t, found)
+	assert.Equal(t, entities.URLStatusError, found.Status)
+	assert.Equal(t, 3, found.RetryCount)
+	assert.Contains(t, found.LastError, "max retries exceeded")
+}
+
+func TestURLRepository_FailPendingOverRetryLimit(t *testing.T) {
+	jobs, urls, _ := setupDB(t)
+	ctx := context.Background()
+
+	job := newJob()
+	require.NoError(t, jobs.Create(ctx, job))
+
+	exhausted := entities.NewCrawlURL(job.ID, "https://example.com/a", "https://example.com/a", "hash-a", 0, "")
+	exhausted.RetryCount = 3
+	fresh := entities.NewCrawlURL(job.ID, "https://example.com/b", "https://example.com/b", "hash-b", 0, "")
+
+	require.NoError(t, urls.Enqueue(ctx, exhausted))
+	require.NoError(t, urls.Enqueue(ctx, fresh))
+
+	failed, err := urls.FailPendingOverRetryLimit(ctx, job.ID, 3)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), failed)
+
+	foundExhausted, err := urls.FindByHash(ctx, job.ID, "hash-a")
+	require.NoError(t, err)
+	require.NotNil(t, foundExhausted)
+	assert.Equal(t, entities.URLStatusError, foundExhausted.Status)
+	assert.Contains(t, foundExhausted.LastError, "max retries exceeded")
+
+	foundFresh, err := urls.FindByHash(ctx, job.ID, "hash-b")
+	require.NoError(t, err)
+	require.NotNil(t, foundFresh)
+	assert.Equal(t, entities.URLStatusPending, foundFresh.Status)
+}
+
 func TestURLRepository_RequeueDueRevisits(t *testing.T) {
 	jobs, urls, _ := setupDB(t)
 	ctx := context.Background()
