@@ -109,8 +109,12 @@ func main() {
 	rateLimiter := fetcher.NewAdaptiveRateLimiter(cfg.Crawler.DefaultRateLimit.Duration)
 	detector := antibot.NewDetector()
 	ext := extraction.NewExtractor()
+	taskTimeout := cfg.Crawler.RequestTimeout.Duration * 3
+	if taskTimeout <= 0 {
+		taskTimeout = 90 * time.Second
+	}
 
-	workerSvc := services.NewWorkerService(httpFetcher, chromiumFetcher, robotsChecker, rateLimiter, detector, mb, cfg.Crawler.ContentDir, cfg.Crawler.PoolSize, logger)
+	workerSvc := services.NewWorkerService(httpFetcher, chromiumFetcher, robotsChecker, rateLimiter, detector, mb, cfg.Crawler.ContentDir, cfg.Crawler.PoolSize, taskTimeout, logger)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
@@ -183,7 +187,10 @@ func main() {
 			defer wg.Done()
 			defer func() { <-sem }()
 
-			result := workerSvc.ProcessTask(ctx, task)
+			taskCtx, cancel := context.WithTimeout(ctx, taskTimeout)
+			defer cancel()
+
+			result := workerSvc.ProcessTask(taskCtx, task)
 			logger.Debug("task processed",
 				"job_id", task.JobID,
 				"url_id", task.URLID,
@@ -194,7 +201,15 @@ func main() {
 			)
 
 			resultData, _ := json.Marshal(result)
-			_ = mb.Publish(ctx, broker.CrawlResultSubject(task.JobID), resultData)
+			if err := mb.Publish(ctx, broker.CrawlResultSubject(task.JobID), resultData); err != nil {
+				logger.Error("publish crawl result",
+					"job_id", task.JobID,
+					"subject", broker.CrawlResultSubject(task.JobID),
+					"url", task.URL,
+					"err", err,
+				)
+				return
+			}
 			logger.Debug("result published",
 				"job_id", task.JobID,
 				"subject", broker.CrawlResultSubject(task.JobID),

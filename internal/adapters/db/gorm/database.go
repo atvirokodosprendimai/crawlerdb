@@ -28,7 +28,7 @@ func Open(dbPath string) (*gorm.DB, error) {
 	if _, err := sqlDB.Exec("PRAGMA journal_mode=WAL"); err != nil {
 		return nil, fmt.Errorf("enable WAL: %w", err)
 	}
-	if _, err := sqlDB.Exec("PRAGMA busy_timeout=5000"); err != nil {
+	if _, err := sqlDB.Exec("PRAGMA busy_timeout=30000"); err != nil {
 		return nil, fmt.Errorf("enable busy timeout: %w", err)
 	}
 	if _, err := sqlDB.Exec("PRAGMA foreign_keys=ON"); err != nil {

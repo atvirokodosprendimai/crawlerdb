@@ -68,7 +68,7 @@ func DefaultAppConfig() AppConfig {
 			RobotsTTL:         Duration{24 * time.Hour},
 			HeartbeatInterval: Duration{5 * time.Second},
 			HeartbeatTTL:      Duration{15 * time.Second},
-			CrawlStuckTimeout: Duration{10 * time.Minute},
+			CrawlStuckTimeout: Duration{2 * time.Minute},
 			DomainConcurrency: 2,
 			DataDir:           ".crawlerdb",
 			ContentDir:        "data",

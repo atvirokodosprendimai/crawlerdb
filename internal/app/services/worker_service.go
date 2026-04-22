@@ -31,6 +31,7 @@ type WorkerService struct {
 	extractor       *extraction.Extractor
 	contentDir      string
 	poolSize        int
+	taskTimeout     time.Duration
 	logger          *slog.Logger
 }
 
@@ -44,10 +45,14 @@ func NewWorkerService(
 	mb ports.MessageBroker,
 	contentDir string,
 	poolSize int,
+	taskTimeout time.Duration,
 	logger *slog.Logger,
 ) *WorkerService {
 	if logger == nil {
 		logger = slog.Default()
+	}
+	if taskTimeout <= 0 {
+		taskTimeout = 90 * time.Second
 	}
 	return &WorkerService{
 		fetcher:         f,
@@ -59,6 +64,7 @@ func NewWorkerService(
 		extractor:       extraction.NewExtractor(),
 		contentDir:      contentDir,
 		poolSize:        poolSize,
+		taskTimeout:     taskTimeout,
 		logger:          logger,
 	}
 }
@@ -280,11 +286,21 @@ func (w *WorkerService) Run(ctx context.Context, jobIDs []string) error {
 				defer wg.Done()
 				defer func() { <-sem }() // release
 
-				result := w.ProcessTask(ctx, task)
+				taskCtx, cancel := context.WithTimeout(ctx, w.taskTimeout)
+				defer cancel()
+
+				result := w.ProcessTask(taskCtx, task)
 
 				// Report result back to core.
 				resultData, _ := json.Marshal(result)
-				_ = w.msgBroker.Publish(ctx, broker.CrawlResultSubject(task.JobID), resultData)
+				if err := w.msgBroker.Publish(ctx, broker.CrawlResultSubject(task.JobID), resultData); err != nil {
+					w.logger.Error("publish crawl result",
+						"job_id", task.JobID,
+						"url_id", task.URLID,
+						"url", task.URL,
+						"err", err,
+					)
+				}
 			}()
 
 			return nil

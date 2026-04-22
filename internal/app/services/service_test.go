@@ -486,7 +486,7 @@ func TestWorkerService_ProcessTask(t *testing.T) {
 	checker := robots.NewChecker(mockHTTPFetcher, "TestBot", time.Hour)
 	rl := fetcher.NewAdaptiveRateLimiter(10 * time.Millisecond)
 
-	worker := services.NewWorkerService(mockHTTPFetcher, nil, checker, rl, nil, b, t.TempDir(), 2, nil)
+	worker := services.NewWorkerService(mockHTTPFetcher, nil, checker, rl, nil, b, t.TempDir(), 2, time.Minute, nil)
 
 	task := services.CrawlTask{
 		JobID:    "job1",
@@ -520,7 +520,7 @@ func TestWorkerService_ProcessTask_StagesBinaryContent(t *testing.T) {
 
 	checker := robots.NewChecker(mockHTTPFetcher, "TestBot", time.Hour)
 	rl := fetcher.NewAdaptiveRateLimiter(10 * time.Millisecond)
-	worker := services.NewWorkerService(mockHTTPFetcher, nil, checker, rl, nil, b, t.TempDir(), 2, nil)
+	worker := services.NewWorkerService(mockHTTPFetcher, nil, checker, rl, nil, b, t.TempDir(), 2, time.Minute, nil)
 
 	result := worker.ProcessTask(context.Background(), services.CrawlTask{
 		JobID:    "job1",

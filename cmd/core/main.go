@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -255,18 +256,32 @@ func main() {
 			return
 		}
 
-		if err := crawlSvc.ProcessResult(ctx, &result); err != nil {
+		if err := retrySQLiteBusy(ctx, 8, 250*time.Millisecond, func() error {
+			return crawlSvc.ProcessResult(ctx, &result)
+		}); err != nil {
 			logger.Error("process result", "err", err, "url", result.URL.Normalized)
 			return
 		}
 
 		// Dispatch more URLs for this job.
-		job, _ := jobSvc.GetJob(ctx, result.URL.JobID)
+		var job *entities.Job
+		_ = retrySQLiteBusy(ctx, 4, 200*time.Millisecond, func() error {
+			var err error
+			job, err = jobSvc.GetJob(ctx, result.URL.JobID)
+			return err
+		})
 		if job != nil && job.Status == entities.JobStatusRunning {
 			// Check completion.
-			done, _ := crawlSvc.CheckCompletion(ctx, job.ID)
+			var done bool
+			_ = retrySQLiteBusy(ctx, 4, 200*time.Millisecond, func() error {
+				var err error
+				done, err = crawlSvc.CheckCompletion(ctx, job.ID)
+				return err
+			})
 			if done {
-				_ = jobSvc.CompleteJob(ctx, job.ID)
+				_ = retrySQLiteBusy(ctx, 4, 200*time.Millisecond, func() error {
+					return jobSvc.CompleteJob(ctx, job.ID)
+				})
 				logger.Info("job completed", "id", job.ID)
 			}
 		}
@@ -286,7 +301,22 @@ func main() {
 				jobs, _ := jobSvc.ListJobs(ctx, 100, 0)
 				for _, job := range jobs {
 					if job.Status == entities.JobStatusRunning {
-						_, _ = crawlSvc.DispatchURLs(ctx, job.ID, job.Config, cfg.Crawler.PoolSize)
+						dispatched := 0
+						err := retrySQLiteBusy(ctx, 4, 200*time.Millisecond, func() error {
+							var err error
+							dispatched, err = crawlSvc.DispatchURLs(ctx, job.ID, job.Config, cfg.Crawler.PoolSize)
+							return err
+						})
+						if err != nil {
+							logger.Error("dispatch urls",
+								"job_id", job.ID,
+								"err", err,
+							)
+							continue
+						}
+						if dispatched > 0 {
+							logger.Debug("dispatched urls", "job_id", job.ID, "count", dispatched)
+						}
 					}
 				}
 			}
@@ -400,4 +430,42 @@ func main() {
 
 	<-ctx.Done()
 	logger.Info("core shutting down")
+}
+
+func retrySQLiteBusy(ctx context.Context, attempts int, baseDelay time.Duration, fn func() error) error {
+	if attempts <= 0 {
+		attempts = 1
+	}
+	if baseDelay <= 0 {
+		baseDelay = 100 * time.Millisecond
+	}
+
+	var err error
+	for attempt := 1; attempt <= attempts; attempt++ {
+		err = fn()
+		if err == nil || !isSQLiteBusy(err) || attempt == attempts {
+			return err
+		}
+
+		delay := time.Duration(attempt) * baseDelay
+		timer := time.NewTimer(delay)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		case <-timer.C:
+		}
+	}
+	return err
+}
+
+func isSQLiteBusy(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "database is locked") ||
+		strings.Contains(msg, "database table is locked") ||
+		strings.Contains(msg, "sql logic error: database is locked") ||
+		strings.Contains(msg, "sqlite_busy")
 }
