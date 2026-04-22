@@ -137,6 +137,32 @@ func main() {
 		logger.Info("job retried", "source_id", req.JobID, "new_id", job.ID, "seed", job.SeedURL)
 	})
 
+	_, _ = nc.Subscribe("job.revisit", func(msg *nats.Msg) {
+		var req struct {
+			JobID string `json:"job_id"`
+		}
+		if err := json.Unmarshal(msg.Data, &req); err != nil {
+			reply, _ := json.Marshal(map[string]string{"error": err.Error()})
+			_ = msg.Respond(reply)
+			return
+		}
+
+		requeued, err := jobSvc.RevisitJob(ctx, req.JobID)
+		if err != nil {
+			reply, _ := json.Marshal(map[string]string{"error": err.Error()})
+			_ = msg.Respond(reply)
+			return
+		}
+
+		reply, _ := json.Marshal(map[string]any{
+			"job_id":         req.JobID,
+			"requeued_count": requeued,
+		})
+		_ = msg.Respond(reply)
+
+		logger.Info("job revisit requested", "job_id", req.JobID, "requeued", requeued)
+	})
+
 	// Handle job status/stop/pause/resume requests.
 	for _, cmd := range []string{"job.status", "job.stop", "job.pause", "job.resume"} {
 		subject := cmd

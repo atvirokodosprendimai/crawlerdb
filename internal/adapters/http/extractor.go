@@ -3,6 +3,7 @@ package fetcher
 import (
 	"io"
 	"net/url"
+	"path"
 	"strings"
 
 	"github.com/atvirokodosprendimai/crawlerdb/internal/domain/entities"
@@ -96,48 +97,69 @@ func extractNodeReferences(n *html.Node) []extractedReference {
 		})
 	}
 
-	appendSrcset := func(raw string) {
-		for _, candidate := range parseSrcset(raw) {
-			appendRef(candidate, "", "")
-		}
-	}
-
 	switch n.Data {
-	case "a":
+	case "a", "area":
 		appendRef(getAttr(n, "href"), getAttr(n, "rel"), extractText(n))
 	case "link":
-		appendRef(getAttr(n, "href"), getAttr(n, "rel"), "")
-		appendSrcset(getAttr(n, "imagesrcset"))
-	case "img", "source":
+		href := getAttr(n, "href")
+		rel := getAttr(n, "rel")
+		if shouldExtractLinkHref(rel, href) {
+			appendRef(href, rel, "")
+		}
+	case "iframe", "frame":
 		appendRef(getAttr(n, "src"), "", "")
-		appendRef(getAttr(n, "data-src"), "", "")
-		appendSrcset(getAttr(n, "srcset"))
-		appendSrcset(getAttr(n, "data-srcset"))
-	case "script", "iframe", "audio", "video", "track", "embed":
-		appendRef(getAttr(n, "src"), "", "")
-		appendRef(getAttr(n, "data-src"), "", "")
+	case "embed":
+		src := getAttr(n, "src")
+		if isBrowsableDocumentURL(src) {
+			appendRef(src, "", "")
+		}
 	case "object":
-		appendRef(getAttr(n, "data"), "", "")
+		data := getAttr(n, "data")
+		if isBrowsableDocumentURL(data) {
+			appendRef(data, "", "")
+		}
 	}
 
 	return refs
 }
 
-func parseSrcset(raw string) []string {
-	if strings.TrimSpace(raw) == "" {
-		return nil
+func shouldExtractLinkHref(rel, rawURL string) bool {
+	if isBrowsableDocumentURL(rawURL) {
+		return true
 	}
 
-	parts := strings.Split(raw, ",")
-	out := make([]string, 0, len(parts))
-	for _, part := range parts {
-		fields := strings.Fields(strings.TrimSpace(part))
-		if len(fields) == 0 {
-			continue
+	for _, token := range strings.Fields(strings.ToLower(rel)) {
+		switch token {
+		case "alternate", "canonical", "next", "prev":
+			return true
 		}
-		out = append(out, fields[0])
 	}
-	return out
+
+	return false
+}
+
+func isBrowsableDocumentURL(rawURL string) bool {
+	rawURL = strings.TrimSpace(rawURL)
+	if rawURL == "" {
+		return false
+	}
+
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return false
+	}
+
+	ext := strings.ToLower(path.Ext(u.Path))
+	switch ext {
+	case ".pdf", ".doc", ".docx", ".odt", ".rtf", ".txt", ".md",
+		".csv", ".tsv", ".xml", ".json",
+		".xls", ".xlsx", ".ods",
+		".ppt", ".pptx", ".odp",
+		".html", ".htm", ".xhtml":
+		return true
+	default:
+		return false
+	}
 }
 
 // ExtractTitle returns the <title> text from HTML.

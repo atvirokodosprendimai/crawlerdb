@@ -320,6 +320,49 @@ func TestURLRepository_RequeueDueRevisits(t *testing.T) {
 	assert.True(t, pending[0].RevisitAt.IsZero())
 }
 
+func TestURLRepository_RequeueJobForRevisit(t *testing.T) {
+	jobs, urls, _ := setupDB(t)
+	ctx := context.Background()
+
+	job := newJob()
+	require.NoError(t, jobs.Create(ctx, job))
+
+	doneURL := entities.NewCrawlURL(job.ID, "https://example.com/done", "https://example.com/done", "hash-done", 0, "")
+	errURL := entities.NewCrawlURL(job.ID, "https://example.com/error", "https://example.com/error", "hash-error", 1, "")
+	blockedURL := entities.NewCrawlURL(job.ID, "https://example.com/blocked", "https://example.com/blocked", "hash-blocked", 1, "")
+	pendingURL := entities.NewCrawlURL(job.ID, "https://example.com/pending", "https://example.com/pending", "hash-pending", 2, "")
+
+	for _, u := range []*entities.CrawlURL{doneURL, errURL, blockedURL, pendingURL} {
+		require.NoError(t, urls.Enqueue(ctx, u))
+	}
+
+	for _, u := range []*entities.CrawlURL{doneURL, errURL, blockedURL} {
+		require.NoError(t, u.Claim())
+	}
+
+	require.NoError(t, doneURL.MarkDone())
+	doneURL.RevisitAt = time.Now().Add(2 * time.Hour)
+	require.NoError(t, urls.Complete(ctx, doneURL))
+
+	require.NoError(t, errURL.MarkError())
+	errURL.LastError = "timeout"
+	errURL.RetryCount = 2
+	require.NoError(t, urls.Complete(ctx, errURL))
+
+	require.NoError(t, blockedURL.MarkBlocked())
+	blockedURL.LastError = "blocked"
+	blockedURL.RetryCount = 1
+	require.NoError(t, urls.Complete(ctx, blockedURL))
+
+	requeued, err := urls.RequeueJobForRevisit(ctx, job.ID)
+	require.NoError(t, err)
+	assert.Equal(t, int64(3), requeued)
+
+	pending, err := urls.FindPending(ctx, job.ID, 10)
+	require.NoError(t, err)
+	require.Len(t, pending, 4)
+}
+
 func TestURLRepository_DedupeJobURLs(t *testing.T) {
 	db, err := store.Open(":memory:")
 	require.NoError(t, err)

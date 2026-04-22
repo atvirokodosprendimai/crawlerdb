@@ -128,6 +128,33 @@ func (j *Job) Stop() error {
 	return nil
 }
 
+// Revisit reactivates a job so already-known URLs can be crawled again.
+func (j *Job) Revisit() error {
+	now := time.Now().UTC()
+
+	switch j.Status {
+	case JobStatusPending:
+		j.Status = JobStatusRunning
+		if j.StartedAt.IsZero() {
+			j.StartedAt = now
+		}
+	case JobStatusRunning:
+		// Keep the job active and only bump the timestamp.
+	case JobStatusPaused, JobStatusCompleted, JobStatusFailed, JobStatusStopped:
+		j.Status = JobStatusRunning
+		if j.StartedAt.IsZero() {
+			j.StartedAt = now
+		}
+	default:
+		return ErrInvalidTransition
+	}
+
+	j.Error = ""
+	j.FinishedAt = time.Time{}
+	j.UpdatedAt = now
+	return nil
+}
+
 // IsTerminal returns true if the job is in a final state.
 func (j *Job) IsTerminal() bool {
 	switch j.Status {

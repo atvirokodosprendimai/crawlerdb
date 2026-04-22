@@ -367,6 +367,28 @@ func (r *URLRepository) RequeueDueRevisits(ctx context.Context, before time.Time
 	return result.RowsAffected, nil
 }
 
+func (r *URLRepository) RequeueJobForRevisit(ctx context.Context, jobID string) (int64, error) {
+	now := time.Now().UTC()
+	result := r.db.WithContext(ctx).
+		Model(&URLModel{}).
+		Where("job_id = ? AND status IN ?", jobID, []string{
+			string(entities.URLStatusDone),
+			string(entities.URLStatusError),
+			string(entities.URLStatusBlocked),
+		}).
+		Updates(map[string]any{
+			"status":      string(entities.URLStatusPending),
+			"updated_at":  now,
+			"revisit_at":  nil,
+			"last_error":  "",
+			"retry_count": 0,
+		})
+	if result.Error != nil {
+		return 0, result.Error
+	}
+	return result.RowsAffected, nil
+}
+
 func (r *URLRepository) Complete(ctx context.Context, url *entities.CrawlURL) error {
 	updates := map[string]any{
 		"status":      string(url.Status),

@@ -168,6 +168,45 @@ func TestJobService_RetryJob(t *testing.T) {
 	assert.Equal(t, entities.JobStatusPending, retried.Status)
 }
 
+func TestJobService_RevisitJob(t *testing.T) {
+	db := setupTestDB(t)
+	b := setupTestNATS(t)
+	jobRepo := store.NewJobRepository(db)
+	urlRepo := store.NewURLRepository(db)
+	svc := services.NewJobService(jobRepo, urlRepo, b)
+	ctx := context.Background()
+
+	job, err := svc.CreateJob(ctx, "https://example.com", testConfig())
+	require.NoError(t, err)
+	require.NoError(t, svc.StartJob(ctx, job.ID))
+
+	doneURL := entities.NewCrawlURL(job.ID, "https://example.com/done", "https://example.com/done", "hash-done", 0, "")
+	require.NoError(t, urlRepo.Enqueue(ctx, doneURL))
+	require.NoError(t, doneURL.Claim())
+	require.NoError(t, doneURL.MarkDone())
+	doneURL.RevisitAt = time.Now().Add(time.Hour)
+	require.NoError(t, urlRepo.Complete(ctx, doneURL))
+
+	require.NoError(t, svc.CompleteJob(ctx, job.ID))
+
+	requeued, err := svc.RevisitJob(ctx, job.ID)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), requeued)
+
+	found, err := svc.GetJob(ctx, job.ID)
+	require.NoError(t, err)
+	require.NotNil(t, found)
+	assert.Equal(t, entities.JobStatusRunning, found.Status)
+	assert.True(t, found.FinishedAt.IsZero())
+
+	pending, err := urlRepo.FindPending(ctx, job.ID, 10)
+	require.NoError(t, err)
+	require.Len(t, pending, 1)
+	assert.Equal(t, "hash-done", pending[0].URLHash)
+	assert.True(t, pending[0].RevisitAt.IsZero())
+	assert.Empty(t, pending[0].LastError)
+}
+
 // --- CrawlService Tests ---
 
 func TestCrawlService_EnqueueAndDispatch(t *testing.T) {

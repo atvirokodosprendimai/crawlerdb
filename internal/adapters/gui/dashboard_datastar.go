@@ -391,6 +391,8 @@ func actionSubject(action string) (string, error) {
 		return "job.resume", nil
 	case "retry":
 		return "job.retry", nil
+	case "revisit":
+		return "job.revisit", nil
 	default:
 		return "", fmt.Errorf("unsupported action: %s", action)
 	}

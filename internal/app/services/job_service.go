@@ -148,6 +148,32 @@ func (s *JobService) RetryJob(ctx context.Context, jobID string) (*entities.Job,
 	return retryJob, nil
 }
 
+// RevisitJob requeues already-known terminal URLs on an existing job and puts it back into running state.
+func (s *JobService) RevisitJob(ctx context.Context, jobID string) (int64, error) {
+	job, err := s.jobRepo.FindByID(ctx, jobID)
+	if err != nil {
+		return 0, fmt.Errorf("find job: %w", err)
+	}
+	if job == nil {
+		return 0, fmt.Errorf("job %s not found", jobID)
+	}
+
+	requeued, err := s.urlRepo.RequeueJobForRevisit(ctx, jobID)
+	if err != nil {
+		return 0, fmt.Errorf("requeue job URLs for revisit: %w", err)
+	}
+
+	if err := job.Revisit(); err != nil {
+		return 0, err
+	}
+	if err := s.jobRepo.Update(ctx, job); err != nil {
+		return 0, fmt.Errorf("update job: %w", err)
+	}
+
+	s.publishJobUpdate(ctx, job)
+	return requeued, nil
+}
+
 func (s *JobService) transitionJob(ctx context.Context, jobID string, transition func(*entities.Job) error) error {
 	job, err := s.jobRepo.FindByID(ctx, jobID)
 	if err != nil {

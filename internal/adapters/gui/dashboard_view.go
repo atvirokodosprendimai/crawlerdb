@@ -431,7 +431,7 @@ func buildSelectedView(job *entities.Job, counts map[string]int) *dashboardSelec
 	if job == nil {
 		return nil
 	}
-	controls := make([]dashboardControl, 0, 5)
+	controls := make([]dashboardControl, 0, 6)
 	switch job.Status {
 	case entities.JobStatusRunning:
 		controls = append(controls,
@@ -446,6 +446,11 @@ func buildSelectedView(job *entities.Job, counts map[string]int) *dashboardSelec
 	case entities.JobStatusFailed, entities.JobStatusStopped:
 		controls = append(controls,
 			dashboardControl{Label: "Retry", Class: "btn btn-primary", Action: jobActionExpr(job.ID, "retry")},
+		)
+	}
+	if counts["done"]+counts["error"]+counts["blocked"] > 0 {
+		controls = append(controls,
+			dashboardControl{Label: "Revisit Site", Class: "btn btn-primary", Action: jobActionExpr(job.ID, "revisit")},
 		)
 	}
 	controls = append(controls,

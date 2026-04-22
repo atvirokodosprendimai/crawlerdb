@@ -411,18 +411,12 @@ crawlerdb export --job <JOB_ID> --format json --output out.json
 Crawler currently walks only:
 
 - `a[href]`
-- `link[href]`
-- `img[src]`, `img[data-src]`, `img[srcset]`, `img[data-srcset]`
-- `source[src]`, `source[data-src]`, `source[srcset]`, `source[data-srcset]`
-- `script[src]`
-- `iframe[src]`
-- `audio[src]`
-- `video[src]`
-- `track[src]`
-- `embed[src]`
-- `object[data]`
+- `area[href]`
+- `link[href]` for navigational relations such as `alternate`, `canonical`, `next`, `prev`
+- `iframe[src]` and `frame[src]`
+- `embed[src]` and `object[data]` when the target looks like a document
 
-Discovered URLs are deduped per page by normalized URL before enqueue.
+It does not enqueue static asset references such as CSS, JS, images, fonts, or media files just because they are referenced by the page.
 
 ### Malformed old-site links
 

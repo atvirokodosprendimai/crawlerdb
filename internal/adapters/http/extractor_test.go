@@ -15,6 +15,7 @@ const testHTML = `<!DOCTYPE html>
   <meta name="description" content="A test page">
   <meta property="og:title" content="OG Title">
   <link rel="stylesheet" href="/styles.css">
+  <link rel="alternate" type="application/xml" href="/feed.xml">
 </head>
 <body>
   <h1>Hello World</h1>
@@ -26,9 +27,8 @@ const testHTML = `<!DOCTYPE html>
   <a href="javascript:void(0)">JS Link</a>
   <a href="mailto:test@example.com">Email</a>
   <a href="/about">Duplicate About</a>
-  <video src="/media/intro.mp4"></video>
-  <source src="/media/intro-hd.mp4" srcset="/media/intro-sd.mp4 1x, /media/intro-4k.mp4 2x" type="video/mp4">
   <img src="/images/photo.jpg" srcset="/images/photo@2x.jpg 2x">
+  <script src="/assets/app.js"></script>
   <script>var x = 1;</script>
   <style>.hidden { display: none; }</style>
 </body>
@@ -38,9 +38,9 @@ func TestExtractLinks(t *testing.T) {
 	ext := fetcher.NewLinkExtractor()
 	links := ext.ExtractLinks(strings.NewReader(testHTML), "https://example.com/page", "example.com")
 
-	// Should find href links plus discovered media/image URLs.
-	// Should skip javascript:, mailto:, duplicate /about.
-	assert.Len(t, links, 11)
+	// Should find navigable anchors plus browsable link[href] targets.
+	// Should skip stylesheet/image/script assets, javascript:, mailto:, duplicate /about.
+	assert.Len(t, links, 5)
 
 	// Check external classification.
 	var externalCount int
@@ -96,10 +96,14 @@ func TestExtractLinks_RelativeURLs(t *testing.T) {
 	assert.GreaterOrEqual(t, len(links), 2)
 }
 
-func TestExtractLinks_SrcsetAndLazyURLsDedupedByNormalizedURL(t *testing.T) {
+func TestExtractLinks_OnlyKeepsBrowsableEmbeddedDocuments(t *testing.T) {
 	html := `<html><body>
-		<img src="/images/a.jpg" srcset="/images/a.jpg 1x, /images/b.jpg 2x">
-		<img data-src="/images/c.jpg" data-srcset="/images/c.jpg 1x, /images/d.jpg 2x">
+		<iframe src="/docs/viewer"></iframe>
+		<embed src="/docs/report.pdf"></embed>
+		<object data="/docs/schema.xml"></object>
+		<script src="/assets/app.js"></script>
+		<img src="/images/logo.svg">
+		<link rel="stylesheet" href="/assets/site.css">
 	</body></html>`
 
 	ext := fetcher.NewLinkExtractor()
@@ -111,9 +115,8 @@ func TestExtractLinks_SrcsetAndLazyURLsDedupedByNormalizedURL(t *testing.T) {
 	}
 
 	assert.ElementsMatch(t, []string{
-		"https://example.com/images/a.jpg",
-		"https://example.com/images/b.jpg",
-		"https://example.com/images/c.jpg",
-		"https://example.com/images/d.jpg",
+		"https://example.com/docs/viewer",
+		"https://example.com/docs/report.pdf",
+		"https://example.com/docs/schema.xml",
 	}, got)
 }
