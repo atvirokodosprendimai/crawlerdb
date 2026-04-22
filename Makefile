@@ -7,6 +7,7 @@ NATS_BIN := $(BIN_DIR)/crawlerdb-nats
 CORE_BIN := $(BIN_DIR)/crawlerdb-core
 CRAWLER_BIN := $(BIN_DIR)/crawlerdb-crawler
 GUI_BIN := $(BIN_DIR)/crawlerdb-gui
+CLI_BIN := $(BIN_DIR)/crawlerdb-cli
 NATS_HOST ?= 127.0.0.1
 NATS_PORT ?= 4222
 DEBUG ?= 0
@@ -23,6 +24,7 @@ build: generate
 	$(GO) build -o $(CORE_BIN) ./cmd/core
 	$(GO) build -o $(CRAWLER_BIN) ./cmd/crawler
 	$(GO) build -o $(GUI_BIN) ./cmd/gui
+	$(GO) build -o $(CLI_BIN) ./cmd/cli
 
 run: build
 	@echo "Starting nats, core, crawler, and gui"
