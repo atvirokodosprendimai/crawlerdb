@@ -94,6 +94,74 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
+	heartbeatPersistQueue := make(chan workerHeartbeatMessage, 2048)
+	resultQueue := make(chan []byte, maxInt(4096, cfg.Crawler.PoolSize*512))
+
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case hb := <-heartbeatPersistQueue:
+				if err := retrySQLiteBusy(ctx, 2, 100*time.Millisecond, func() error {
+					return workerRepo.UpdateHeartbeat(ctx, hb.WorkerID, hb.Timestamp)
+				}); err != nil {
+					logger.Debug("update worker heartbeat from broker",
+						"worker_id", hb.WorkerID,
+						"hostname", hb.Hostname,
+						"err", err,
+					)
+				}
+			}
+		}
+	}()
+
+	resultWorkers := maxInt(4, cfg.Crawler.PoolSize)
+	for i := 0; i < resultWorkers; i++ {
+		go func() {
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case data := <-resultQueue:
+					var result entities.CrawlResult
+					if err := json.Unmarshal(data, &result); err != nil {
+						logger.Error("unmarshal crawl result", "err", err)
+						continue
+					}
+
+					if err := retrySQLiteBusy(ctx, 8, 250*time.Millisecond, func() error {
+						return crawlSvc.ProcessResult(ctx, &result)
+					}); err != nil {
+						logger.Error("process result", "err", err, "url", result.URL.Normalized)
+						continue
+					}
+
+					var job *entities.Job
+					_ = retrySQLiteBusy(ctx, 4, 200*time.Millisecond, func() error {
+						var err error
+						job, err = jobSvc.GetJob(ctx, result.URL.JobID)
+						return err
+					})
+					if job != nil && job.Status == entities.JobStatusRunning {
+						var done bool
+						_ = retrySQLiteBusy(ctx, 4, 200*time.Millisecond, func() error {
+							var err error
+							done, err = crawlSvc.CheckCompletion(ctx, job.ID)
+							return err
+						})
+						if done {
+							_ = retrySQLiteBusy(ctx, 4, 200*time.Millisecond, func() error {
+								return jobSvc.CompleteJob(ctx, job.ID)
+							})
+							logger.Info("job completed", "id", job.ID)
+						}
+					}
+				}
+			}
+		}()
+	}
+
 	// Handle job.create requests.
 	_, _ = nc.Subscribe("job.create", func(msg *nats.Msg) {
 		var req struct {
@@ -124,12 +192,7 @@ func main() {
 	})
 
 	_, _ = nc.Subscribe(broker.SubjectWorkerHeartbeat, func(msg *nats.Msg) {
-		var hb struct {
-			WorkerID  string    `json:"worker_id"`
-			Hostname  string    `json:"hostname"`
-			Status    string    `json:"status"`
-			Timestamp time.Time `json:"timestamp"`
-		}
+		var hb workerHeartbeatMessage
 		if err := json.Unmarshal(msg.Data, &hb); err != nil {
 			logger.Warn("unmarshal worker heartbeat", "err", err)
 			return
@@ -142,13 +205,13 @@ func main() {
 			ts = time.Now().UTC()
 		}
 		heartbeats.Record(hb.WorkerID, ts)
-		if err := retrySQLiteBusy(ctx, 2, 100*time.Millisecond, func() error {
-			return workerRepo.UpdateHeartbeat(ctx, hb.WorkerID, ts)
-		}); err != nil {
-			logger.Debug("update worker heartbeat from broker",
+		hb.Timestamp = ts
+		select {
+		case heartbeatPersistQueue <- hb:
+		default:
+			logger.Warn("heartbeat persist queue full",
 				"worker_id", hb.WorkerID,
 				"hostname", hb.Hostname,
-				"err", err,
 			)
 		}
 	})
@@ -294,40 +357,20 @@ func main() {
 
 	// Handle crawl results from workers.
 	_, _ = nc.Subscribe("crawl.result.>", func(msg *nats.Msg) {
-		var result entities.CrawlResult
-		if err := json.Unmarshal(msg.Data, &result); err != nil {
-			logger.Error("unmarshal crawl result", "err", err)
-			return
-		}
-
-		if err := retrySQLiteBusy(ctx, 8, 250*time.Millisecond, func() error {
-			return crawlSvc.ProcessResult(ctx, &result)
-		}); err != nil {
-			logger.Error("process result", "err", err, "url", result.URL.Normalized)
-			return
-		}
-
-		// Dispatch more URLs for this job.
-		var job *entities.Job
-		_ = retrySQLiteBusy(ctx, 4, 200*time.Millisecond, func() error {
-			var err error
-			job, err = jobSvc.GetJob(ctx, result.URL.JobID)
-			return err
-		})
-		if job != nil && job.Status == entities.JobStatusRunning {
-			// Check completion.
-			var done bool
-			_ = retrySQLiteBusy(ctx, 4, 200*time.Millisecond, func() error {
-				var err error
-				done, err = crawlSvc.CheckCompletion(ctx, job.ID)
-				return err
-			})
-			if done {
-				_ = retrySQLiteBusy(ctx, 4, 200*time.Millisecond, func() error {
-					return jobSvc.CompleteJob(ctx, job.ID)
-				})
-				logger.Info("job completed", "id", job.ID)
-			}
+		payload := append([]byte(nil), msg.Data...)
+		select {
+		case resultQueue <- payload:
+		default:
+			go func(data []byte) {
+				select {
+				case resultQueue <- data:
+				case <-ctx.Done():
+				}
+			}(payload)
+			logger.Warn("crawl result queue saturated; spilling to goroutine",
+				"subject", msg.Subject,
+				"bytes", len(payload),
+			)
 		}
 	})
 
@@ -557,6 +600,13 @@ func isSQLiteBusy(err error) bool {
 		strings.Contains(msg, "sqlite_busy")
 }
 
+type workerHeartbeatMessage struct {
+	WorkerID  string    `json:"worker_id"`
+	Hostname  string    `json:"hostname"`
+	Status    string    `json:"status"`
+	Timestamp time.Time `json:"timestamp"`
+}
+
 type workerHeartbeatTracker struct {
 	mu       sync.RWMutex
 	lastSeen map[string]time.Time
@@ -585,4 +635,11 @@ func (t *workerHeartbeatTracker) LastSeen(workerID string) (time.Time, bool) {
 	defer t.mu.RUnlock()
 	ts, ok := t.lastSeen[workerID]
 	return ts, ok
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
