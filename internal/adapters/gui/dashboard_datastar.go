@@ -54,6 +54,10 @@ func (h *datastarDashboardHandlers) handleDashboard(w http.ResponseWriter, r *ht
 	patchDashboardSignals(sse, signals)
 	if err := patchDashboardRoot(r.Context(), sse, view); err != nil {
 		writeError(w, err, http.StatusInternalServerError)
+		return
+	}
+	if err := patchDashboardSubscription(r.Context(), sse, signals); err != nil {
+		writeError(w, err, http.StatusInternalServerError)
 	}
 }
 
@@ -126,6 +130,10 @@ func (h *datastarDashboardHandlers) handleCreateJob(w http.ResponseWriter, r *ht
 	patchDashboardSignals(sse, signals)
 	if err := patchDashboardRoot(r.Context(), sse, view); err != nil {
 		writeError(w, err, http.StatusInternalServerError)
+		return
+	}
+	if err := patchDashboardSubscription(r.Context(), sse, signals); err != nil {
+		writeError(w, err, http.StatusInternalServerError)
 	}
 }
 
@@ -157,6 +165,10 @@ func (h *datastarDashboardHandlers) handleJobAction(w http.ResponseWriter, r *ht
 		patchDashboardSignals(sse, signals)
 		if err := patchDashboardRoot(r.Context(), sse, view); err != nil {
 			writeError(w, err, http.StatusInternalServerError)
+			return
+		}
+		if err := patchDashboardSubscription(r.Context(), sse, signals); err != nil {
+			writeError(w, err, http.StatusInternalServerError)
 		}
 		return
 	}
@@ -179,6 +191,10 @@ func (h *datastarDashboardHandlers) handleJobAction(w http.ResponseWriter, r *ht
 		patchDashboardSignals(sse, signals)
 		if err := patchDashboardRoot(r.Context(), sse, view); err != nil {
 			writeError(w, err, http.StatusInternalServerError)
+			return
+		}
+		if err := patchDashboardSubscription(r.Context(), sse, signals); err != nil {
+			writeError(w, err, http.StatusInternalServerError)
 		}
 		return
 	}
@@ -200,6 +216,10 @@ func (h *datastarDashboardHandlers) handleJobAction(w http.ResponseWriter, r *ht
 		sse := datastar.NewSSE(w, r)
 		patchDashboardSignals(sse, signals)
 		if err := patchDashboardRoot(r.Context(), sse, view); err != nil {
+			writeError(w, err, http.StatusInternalServerError)
+			return
+		}
+		if err := patchDashboardSubscription(r.Context(), sse, signals); err != nil {
 			writeError(w, err, http.StatusInternalServerError)
 		}
 		return
@@ -253,11 +273,16 @@ func (h *datastarDashboardHandlers) handleJobAction(w http.ResponseWriter, r *ht
 	patchDashboardSignals(sse, signals)
 	if err := patchDashboardRoot(r.Context(), sse, view); err != nil {
 		writeError(w, err, http.StatusInternalServerError)
+		return
+	}
+	if err := patchDashboardSubscription(r.Context(), sse, signals); err != nil {
+		writeError(w, err, http.StatusInternalServerError)
 	}
 }
 
 func (h *datastarDashboardHandlers) handleSubscribe(w http.ResponseWriter, r *http.Request) {
-	if _, err := readDashboardSignals(r); err != nil {
+	signals, err := readDashboardSignals(r)
+	if err != nil {
 		writeError(w, err, http.StatusBadRequest)
 		return
 	}
@@ -315,6 +340,11 @@ func (h *datastarDashboardHandlers) handleSubscribe(w http.ResponseWriter, r *ht
 	}()
 
 	sse := datastar.NewSSE(w, r)
+	view, err := h.loader.load(r.Context(), &signals)
+	if err != nil {
+		writeError(w, err, http.StatusInternalServerError)
+		return
+	}
 	removedEmpty := false
 	for {
 		select {
@@ -330,11 +360,13 @@ func (h *datastarDashboardHandlers) handleSubscribe(w http.ResponseWriter, r *ht
 				return
 			}
 			_ = sse.PatchElements(html, datastar.WithSelector("#event-stream"), datastar.WithMode(datastar.ElementPatchModePrepend))
-			_ = sse.PatchElementTempl(
-				DashboardRefreshTrigger(time.Now().UTC().Format(time.RFC3339Nano)),
-				datastar.WithSelector("#dashboard-refresh-trigger"),
-				datastar.WithMode(datastar.ElementPatchModeInner),
-			)
+			view, err = h.loader.load(r.Context(), &signals)
+			if err != nil {
+				return
+			}
+			if err := patchDashboardRoot(r.Context(), sse, view); err != nil {
+				return
+			}
 		}
 	}
 }
@@ -365,8 +397,10 @@ func (h *datastarDashboardHandlers) handleClock(w http.ResponseWriter, r *http.R
 
 func readDashboardSignals(r *http.Request) (dashboardSignals, error) {
 	signals := defaultDashboardSignals()
-	hasSignals := r.Method != http.MethodGet || r.URL.Query().Get(datastar.DatastarKey) != ""
-	if !hasSignals {
+	hasDatastarSignals := r.Method != http.MethodGet || r.URL.Query().Get(datastar.DatastarKey) != ""
+	if !hasDatastarSignals {
+		readDashboardSignalsFromQuery(r, &signals)
+		normalizeDashboardSignals(&signals)
 		return signals, nil
 	}
 	if err := datastar.ReadSignals(r, &signals); err != nil && !errors.Is(err, context.Canceled) {
@@ -374,6 +408,20 @@ func readDashboardSignals(r *http.Request) (dashboardSignals, error) {
 	}
 	normalizeDashboardSignals(&signals)
 	return signals, nil
+}
+
+func readDashboardSignalsFromQuery(r *http.Request, signals *dashboardSignals) {
+	q := r.URL.Query()
+	signals.SelectedJobID = strings.TrimSpace(q.Get("selected_job_id"))
+	signals.SiteQuery = strings.TrimSpace(q.Get("site_query"))
+	signals.SiteStatus = strings.TrimSpace(q.Get("site_status"))
+	signals.SiteContent = strings.TrimSpace(q.Get("site_content"))
+	signals.SiteDepth = strings.TrimSpace(q.Get("site_depth"))
+	signals.SeedURL = strings.TrimSpace(q.Get("seed_url"))
+	signals.Scope = strings.TrimSpace(q.Get("scope"))
+	signals.ExceptionsOffset = parsePositiveInt(q.Get("exceptions_offset"), signals.ExceptionsOffset)
+	signals.SiteOffset = parsePositiveInt(q.Get("site_offset"), signals.SiteOffset)
+	signals.MaxDepth = parsePositiveInt(q.Get("max_depth"), signals.MaxDepth)
 }
 
 func patchDashboardSignals(sse *datastar.ServerSentEventGenerator, signals dashboardSignals) {
@@ -398,6 +446,14 @@ func patchDashboardRoot(ctx context.Context, sse *datastar.ServerSentEventGenera
 	}
 	sse.PatchElements(html, datastar.WithSelector("#dashboard-root"), datastar.WithMode(datastar.ElementPatchModeInner))
 	return nil
+}
+
+func patchDashboardSubscription(ctx context.Context, sse *datastar.ServerSentEventGenerator, signals dashboardSignals) error {
+	return sse.PatchElementTempl(
+		DashboardSubscription(signals),
+		datastar.WithSelector("#dashboard-subscription"),
+		datastar.WithMode(datastar.ElementPatchModeOuter),
+	)
 }
 
 func renderComponent(ctx context.Context, component templ.Component) (string, error) {

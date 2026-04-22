@@ -552,12 +552,44 @@ func refreshDashboardExpr() string {
 	return "@get('/api/gui/dashboard')"
 }
 
-func subscribeDashboardExpr() string {
-	return "@get('/api/gui/subscribe', {openWhenHidden: true})"
-}
+func subscribeDashboardExpr(signals dashboardSignals) string {
+	params := url.Values{}
+	if signals.SelectedJobID != "" {
+		params.Set("selected_job_id", signals.SelectedJobID)
+	}
+	if signals.ExceptionsOffset > 0 {
+		params.Set("exceptions_offset", fmt.Sprintf("%d", signals.ExceptionsOffset))
+	}
+	if signals.SiteOffset > 0 {
+		params.Set("site_offset", fmt.Sprintf("%d", signals.SiteOffset))
+	}
+	if signals.SiteQuery != "" {
+		params.Set("site_query", signals.SiteQuery)
+	}
+	if signals.SiteStatus != "" && signals.SiteStatus != "all" {
+		params.Set("site_status", signals.SiteStatus)
+	}
+	if signals.SiteContent != "" && signals.SiteContent != "all" {
+		params.Set("site_content", signals.SiteContent)
+	}
+	if signals.SiteDepth != "" && signals.SiteDepth != "all" {
+		params.Set("site_depth", signals.SiteDepth)
+	}
+	if signals.SeedURL != "" {
+		params.Set("seed_url", signals.SeedURL)
+	}
+	if signals.Scope != "" && signals.Scope != "same_domain" {
+		params.Set("scope", signals.Scope)
+	}
+	if signals.MaxDepth > 0 && signals.MaxDepth != defaultDashboardMaxDepth() {
+		params.Set("max_depth", fmt.Sprintf("%d", signals.MaxDepth))
+	}
 
-func refreshDashboardTriggerExpr(token string) string {
-	return fmt.Sprintf("@get('/api/gui/dashboard?refresh=%s', {openWhenHidden: true})", url.QueryEscape(token))
+	path := "/api/gui/subscribe"
+	if encoded := params.Encode(); encoded != "" {
+		path += "?" + encoded
+	}
+	return fmt.Sprintf("@get('%s', {openWhenHidden: true})", path)
 }
 
 func selectJobExpr(id string) string {

@@ -41,15 +41,14 @@ templ DashboardPage() {
                         </div>
                     </div>
                 </section>
-                <div id="dashboard-refresh-trigger" hidden></div>
-                <div data-init={ subscribeDashboardExpr() }></div>
+                @DashboardSubscription(defaultDashboardSignals())
             </div>
         </body>
     </html>
 }
 
-templ DashboardRefreshTrigger(token string) {
-    <div data-refresh-token={ token } data-init={ refreshDashboardTriggerExpr(token) }></div>
+templ DashboardSubscription(signals dashboardSignals) {
+    <div id="dashboard-subscription" hidden data-init={ subscribeDashboardExpr(signals) }></div>
 }
 
 templ DashboardRoot(view dashboardView) {
