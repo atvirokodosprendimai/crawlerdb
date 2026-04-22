@@ -525,6 +525,43 @@ func (r *URLRepository) FindByJobID(ctx context.Context, jobID string, limit, of
 	return result, nil
 }
 
+func (r *URLRepository) CountCrawlingByDomain(ctx context.Context, jobID string) (map[string]int, error) {
+	type row struct {
+		Domain string
+		Count  int
+	}
+
+	var rows []row
+	err := r.db.WithContext(ctx).Raw(`
+		SELECT
+			CASE
+				WHEN INSTR(SUBSTR(normalized, INSTR(normalized, '://') + 3), '/') > 0
+				THEN SUBSTR(
+					SUBSTR(normalized, INSTR(normalized, '://') + 3),
+					1,
+					INSTR(SUBSTR(normalized, INSTR(normalized, '://') + 3), '/') - 1
+				)
+				ELSE SUBSTR(normalized, INSTR(normalized, '://') + 3)
+			END AS domain,
+			COUNT(*) AS count
+		FROM urls
+		WHERE job_id = ? AND status = ?
+		GROUP BY domain
+	`, jobID, string(entities.URLStatusCrawling)).Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+
+	result := make(map[string]int, len(rows))
+	for _, row := range rows {
+		if row.Domain == "" {
+			continue
+		}
+		result[row.Domain] = row.Count
+	}
+	return result, nil
+}
+
 func (r *URLRepository) FindByJobIDAndStatuses(ctx context.Context, jobID string, statuses []entities.URLStatus, limit, offset int) ([]*entities.CrawlURL, error) {
 	if len(statuses) == 0 {
 		return nil, nil

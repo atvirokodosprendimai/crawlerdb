@@ -140,6 +140,11 @@ func (s *CrawlService) selectDispatchIDs(ctx context.Context, jobID string, cfg 
 	now := time.Now()
 	selected := make([]string, 0, limit)
 	reservedDomains := make(map[string]struct{}, limit)
+	inFlightByDomain, err := s.urlRepo.CountCrawlingByDomain(ctx, jobID)
+	if err != nil {
+		return nil, err
+	}
+	maxConcurrency := cfg.MaxConcurrency
 
 	for _, u := range pending {
 		if len(selected) >= limit {
@@ -147,6 +152,9 @@ func (s *CrawlService) selectDispatchIDs(ctx context.Context, jobID string, cfg 
 		}
 		domain := extractHost(u.Normalized)
 		if domain == "" {
+			continue
+		}
+		if maxConcurrency > 0 && inFlightByDomain[domain] >= maxConcurrency {
 			continue
 		}
 		if interval > 0 {
@@ -161,6 +169,7 @@ func (s *CrawlService) selectDispatchIDs(ctx context.Context, jobID string, cfg 
 		if interval > 0 {
 			reservedDomains[domain] = struct{}{}
 		}
+		inFlightByDomain[domain]++
 	}
 
 	return selected, nil

@@ -33,6 +33,7 @@ type URLRepository interface {
 	FindByJobID(ctx context.Context, jobID string, limit, offset int) ([]*entities.CrawlURL, error)
 	FindByJobIDAndStatuses(ctx context.Context, jobID string, statuses []entities.URLStatus, limit, offset int) ([]*entities.CrawlURL, error)
 	CountByStatus(ctx context.Context, jobID string) (map[entities.URLStatus]int, error)
+	CountCrawlingByDomain(ctx context.Context, jobID string) (map[string]int, error)
 }
 
 // PageRepository defines persistence operations for crawled pages.
