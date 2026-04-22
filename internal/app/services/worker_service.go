@@ -35,6 +35,8 @@ type WorkerService struct {
 	logger          *slog.Logger
 }
 
+const maxTransportPayloadBytes = 900 * 1024
+
 // NewWorkerService creates a new worker service.
 func NewWorkerService(
 	f ports.Fetcher,
@@ -231,19 +233,21 @@ func (w *WorkerService) fetchWith(task CrawlTask, ctx context.Context, fetcher p
 }
 
 func shouldStageContent(page *entities.Page) bool {
-	if page == nil || len(page.RawContent) == 0 || page.ContentPath != "" {
+	if page == nil || page.ContentPath != "" {
 		return false
 	}
-	mediaType, _, err := mime.ParseMediaType(page.ContentType)
-	if err != nil {
-		return false
-	}
-	mediaType = filepath.Clean(mediaType)
-	return mediaType != "text/html" && mediaType != "application/xhtml+xml"
+	return len(page.RawContent) > 0 || page.HTMLBody != ""
 }
 
 func (w *WorkerService) stageContent(url string, page *entities.Page) error {
 	if strings.TrimSpace(w.contentDir) == "" {
+		return nil
+	}
+	payload := page.RawContent
+	if len(payload) == 0 && page.HTMLBody != "" {
+		payload = []byte(page.HTMLBody)
+	}
+	if len(payload) == 0 {
 		return nil
 	}
 	path, err := store.BuildContentPath(w.contentDir, url, page.ContentType)
@@ -257,13 +261,77 @@ func (w *WorkerService) stageContent(url string, page *entities.Page) error {
 	if err := os.MkdirAll(filepath.Dir(absPath), 0o755); err != nil {
 		return err
 	}
-	if err := os.WriteFile(absPath, page.RawContent, 0o644); err != nil {
+	if err := os.WriteFile(absPath, payload, 0o644); err != nil {
 		return err
 	}
 	page.ContentPath = filepath.ToSlash(path)
-	page.ContentSize = int64(len(page.RawContent))
+	page.ContentSize = int64(len(payload))
 	page.RawContent = nil
+	page.HTMLBody = ""
 	return nil
+}
+
+func compactResultForTransport(result *entities.CrawlResult) ([]byte, error) {
+	if result == nil {
+		return json.Marshal(result)
+	}
+
+	if result.Page != nil {
+		// Links are already transported in DiscoveredURLs; avoid sending them twice.
+		result.Page.Links = nil
+		// Content is staged to disk before transport.
+		if result.Page.ContentPath != "" {
+			result.Page.HTMLBody = ""
+		}
+	}
+
+	data, err := json.Marshal(result)
+	if err != nil {
+		return nil, err
+	}
+	if len(data) <= maxTransportPayloadBytes {
+		return data, nil
+	}
+
+	if result.Page != nil && result.Page.ContentPath != "" && !isHTMLContentType(result.Page.ContentType) && result.Page.TextContent != "" {
+		result.Page.TextContent = ""
+		data, err = json.Marshal(result)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if len(data) <= maxTransportPayloadBytes {
+		return data, nil
+	}
+
+	if result.Page != nil && len(result.Page.StructuredData) > 0 {
+		result.Page.StructuredData = nil
+		data, err = json.Marshal(result)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if len(data) <= maxTransportPayloadBytes {
+		return data, nil
+	}
+
+	if result.Page != nil && len(result.Page.MetaTags) > 0 {
+		result.Page.MetaTags = nil
+		data, err = json.Marshal(result)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return data, err
+}
+
+func isHTMLContentType(contentType string) bool {
+	mediaType, _, err := mime.ParseMediaType(contentType)
+	if err != nil {
+		return false
+	}
+	mediaType = filepath.Clean(strings.ToLower(mediaType))
+	return mediaType == "text/html" || mediaType == "application/xhtml+xml"
 }
 
 // Run starts the worker pool, subscribing to NATS for crawl tasks.
@@ -292,7 +360,22 @@ func (w *WorkerService) Run(ctx context.Context, jobIDs []string) error {
 				result := w.ProcessTask(taskCtx, task)
 
 				// Report result back to core.
-				resultData, _ := json.Marshal(result)
+				resultData, err := compactResultForTransport(result)
+				if err != nil {
+					w.logger.Error("marshal crawl result",
+						"job_id", task.JobID,
+						"url_id", task.URLID,
+						"url", task.URL,
+						"err", err,
+					)
+					return
+				}
+				w.logger.Debug("crawl result payload",
+					"job_id", task.JobID,
+					"url_id", task.URLID,
+					"url", task.URL,
+					"bytes", len(resultData),
+				)
 				if err := w.msgBroker.Publish(ctx, broker.CrawlResultSubject(task.JobID), resultData); err != nil {
 					w.logger.Error("publish crawl result",
 						"job_id", task.JobID,

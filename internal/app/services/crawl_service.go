@@ -207,6 +207,9 @@ func (s *CrawlService) ProcessResult(ctx context.Context, result *entities.Crawl
 
 	// Store page if successful.
 	if result.Success && result.Page != nil {
+		if len(result.Page.Links) == 0 && len(result.DiscoveredURLs) > 0 {
+			result.Page.Links = append([]entities.DiscoveredLink(nil), result.DiscoveredURLs...)
+		}
 		if err := s.pageRepo.Store(ctx, result.Page); err != nil {
 			return fmt.Errorf("store page: %w", err)
 		}

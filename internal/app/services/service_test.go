@@ -540,6 +540,89 @@ func TestWorkerService_ProcessTask_StagesBinaryContent(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestWorkerService_ProcessTask_StagesHTMLContentAndClearsTransportBody(t *testing.T) {
+	b := setupTestNATS(t)
+	mockHTTPFetcher := &mockFetcher{
+		responses: map[string]*ports.FetchResponse{
+			"https://example.com/page": {
+				StatusCode:  200,
+				ContentType: "text/html; charset=utf-8",
+				Headers:     http.Header{"Content-Type": {"text/html; charset=utf-8"}},
+				Body:        io.NopCloser(strings.NewReader("<html><head><title>Test</title></head><body><a href=\"/about\">About</a><p>Hello</p></body></html>")),
+				URL:         "https://example.com/page",
+			},
+		},
+	}
+
+	checker := robots.NewChecker(mockHTTPFetcher, "TestBot", time.Hour)
+	rl := fetcher.NewAdaptiveRateLimiter(10 * time.Millisecond)
+	worker := services.NewWorkerService(mockHTTPFetcher, nil, checker, rl, nil, b, t.TempDir(), 2, time.Minute, nil)
+
+	result := worker.ProcessTask(context.Background(), services.CrawlTask{
+		JobID:    "job1",
+		URLID:    "url1",
+		URL:      "https://example.com/page",
+		Depth:    0,
+		Config:   testConfig(),
+		SeedHost: "example.com",
+	})
+
+	require.True(t, result.Success)
+	require.NotNil(t, result.Page)
+	assert.NotEmpty(t, result.Page.ContentPath)
+	assert.Empty(t, result.Page.HTMLBody)
+	assert.Nil(t, result.Page.RawContent)
+	assert.Contains(t, result.Page.TextContent, "Hello")
+	_, err := os.Stat(result.Page.ContentPath)
+	require.NoError(t, err)
+}
+
+func TestCrawlService_ProcessResult_RestoresPageLinksFromDiscoveredURLs(t *testing.T) {
+	db := setupTestDB(t)
+	b := setupTestNATS(t)
+	jobRepo := store.NewJobRepository(db)
+	urlRepo := store.NewURLRepository(db)
+	pageRepo := store.NewPageRepository(db, store.WithContentDir(filepath.Join(t.TempDir(), "data")))
+	crawlSvc := services.NewCrawlService(jobRepo, urlRepo, pageRepo, b)
+	jobSvc := services.NewJobService(jobRepo, urlRepo, b)
+	ctx := context.Background()
+
+	job, err := jobSvc.CreateJob(ctx, "https://example.com", testConfig())
+	require.NoError(t, err)
+	require.NoError(t, jobSvc.StartJob(ctx, job.ID))
+	require.NoError(t, crawlSvc.EnqueueSeedURL(ctx, job))
+
+	claimed, err := urlRepo.Claim(ctx, job.ID, 1)
+	require.NoError(t, err)
+	require.Len(t, claimed, 1)
+
+	page := entities.NewPage(claimed[0].ID, job.ID)
+	page.HTTPStatus = 200
+	page.ContentType = "text/html; charset=utf-8"
+	page.ContentPath = filepath.Join(t.TempDir(), "page.html")
+	page.TextContent = "ok"
+	require.NoError(t, os.WriteFile(page.ContentPath, []byte("<html><body>ok</body></html>"), 0o644))
+
+	discovered := []entities.DiscoveredLink{
+		{RawURL: "/about", Normalized: "https://example.com/about", URLHash: "h1", IsExternal: false},
+	}
+	result := &entities.CrawlResult{
+		URL:            claimed[0],
+		Page:           page,
+		Success:        true,
+		DiscoveredURLs: discovered,
+	}
+
+	err = crawlSvc.ProcessResult(ctx, result)
+	require.NoError(t, err)
+
+	storedPage, err := pageRepo.FindByURLID(ctx, claimed[0].ID)
+	require.NoError(t, err)
+	require.NotNil(t, storedPage)
+	assert.Len(t, storedPage.Links, 1)
+	assert.Equal(t, "https://example.com/about", storedPage.Links[0].Normalized)
+}
+
 // mockFetcher for worker tests.
 type mockFetcher struct {
 	responses map[string]*ports.FetchResponse
