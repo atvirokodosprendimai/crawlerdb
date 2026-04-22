@@ -104,6 +104,18 @@ func TestRouter_DashboardDatastarIgnoresMalformedStoredURLs(t *testing.T) {
 	assert.Contains(t, w.Body.String(), "site-table")
 }
 
+func TestRouter_DashboardDatastarUsesSSEContentType(t *testing.T) {
+	router, _ := setupTestRouter(t)
+	req := httptest.NewRequest("GET", "/api/gui/dashboard", nil)
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Header().Get("Content-Type"), "text/event-stream")
+	assert.NotContains(t, w.Header().Get("Content-Type"), "application/json")
+}
+
 func TestRouter_GetJob_NotFound(t *testing.T) {
 	router, _ := setupTestRouter(t)
 	req := httptest.NewRequest("GET", "/api/jobs/nonexistent", nil)

@@ -65,275 +65,285 @@ func NewRouter(db *gorm.DB, broker ports.MessageBroker, logger *slog.Logger) *Ro
 
 	// API routes.
 	r.Route("/api", func(r chi.Router) {
-		r.Use(middleware.SetHeader("Content-Type", "application/json"))
-		// Jobs.
-		r.Get("/jobs/overview", func(w http.ResponseWriter, req *http.Request) {
-			jobs, err := jobRepo.List(req.Context(), 100, 0)
-			if err != nil {
-				writeError(w, err, http.StatusInternalServerError)
-				return
-			}
+		r.Route("/gui", func(r chi.Router) {
+			r.Get("/dashboard", datastarHandlers.handleDashboard)
+			r.Post("/jobs", datastarHandlers.handleCreateJob)
+			r.Post("/jobs/{id}/{action}", datastarHandlers.handleJobAction)
+			r.Get("/subscribe", datastarHandlers.handleSubscribe)
+			r.Get("/events", datastarHandlers.handleSubscribe)
+			r.Get("/clock", datastarHandlers.handleClock)
+		})
 
-			type jobOverview struct {
-				Job            any            `json:"job"`
-				Counts         map[string]int `json:"counts"`
-				ExceptionCount int            `json:"exception_count"`
-			}
-
-			overview := make([]jobOverview, 0, len(jobs))
-			for _, job := range jobs {
-				counts, err := urlRepo.CountByStatus(req.Context(), job.ID)
+		r.Group(func(r chi.Router) {
+			r.Use(middleware.SetHeader("Content-Type", "application/json"))
+			// Jobs.
+			r.Get("/jobs/overview", func(w http.ResponseWriter, req *http.Request) {
+				jobs, err := jobRepo.List(req.Context(), 100, 0)
 				if err != nil {
 					writeError(w, err, http.StatusInternalServerError)
 					return
 				}
 
-				flat := make(map[string]int, len(counts))
-				for status, count := range counts {
-					flat[string(status)] = count
+				type jobOverview struct {
+					Job            any            `json:"job"`
+					Counts         map[string]int `json:"counts"`
+					ExceptionCount int            `json:"exception_count"`
 				}
 
-				overview = append(overview, jobOverview{
-					Job:            job,
-					Counts:         flat,
-					ExceptionCount: flat["error"] + flat["blocked"],
-				})
-			}
+				overview := make([]jobOverview, 0, len(jobs))
+				for _, job := range jobs {
+					counts, err := urlRepo.CountByStatus(req.Context(), job.ID)
+					if err != nil {
+						writeError(w, err, http.StatusInternalServerError)
+						return
+					}
 
-			writeJSON(w, overview)
-		})
+					flat := make(map[string]int, len(counts))
+					for status, count := range counts {
+						flat[string(status)] = count
+					}
 
-		r.Get("/jobs", func(w http.ResponseWriter, req *http.Request) {
-			jobs, err := jobRepo.List(req.Context(), 100, 0)
-			if err != nil {
-				writeError(w, err, http.StatusInternalServerError)
-				return
-			}
-			writeJSON(w, jobs)
-		})
+					overview = append(overview, jobOverview{
+						Job:            job,
+						Counts:         flat,
+						ExceptionCount: flat["error"] + flat["blocked"],
+					})
+				}
 
-		r.Get("/jobs/{id}", func(w http.ResponseWriter, req *http.Request) {
-			id := chi.URLParam(req, "id")
-			job, err := jobRepo.FindByID(req.Context(), id)
-			if err != nil {
-				writeError(w, err, http.StatusInternalServerError)
-				return
-			}
-			if job == nil {
-				writeError(w, nil, http.StatusNotFound)
-				return
-			}
-			writeJSON(w, job)
-		})
+				writeJSON(w, overview)
+			})
 
-		// Job actions via NATS request/reply.
-		r.Post("/jobs", func(w http.ResponseWriter, req *http.Request) {
-			var body json.RawMessage
-			if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
-				writeError(w, err, http.StatusBadRequest)
-				return
-			}
-			reply, err := broker.Request(req.Context(), "job.create", body)
-			if err != nil {
-				writeError(w, err, http.StatusInternalServerError)
-				return
-			}
-			w.Header().Set("Content-Type", "application/json")
-			w.Write(reply)
-		})
+			r.Get("/jobs", func(w http.ResponseWriter, req *http.Request) {
+				jobs, err := jobRepo.List(req.Context(), 100, 0)
+				if err != nil {
+					writeError(w, err, http.StatusInternalServerError)
+					return
+				}
+				writeJSON(w, jobs)
+			})
 
-		r.Post("/jobs/{id}/stop", func(w http.ResponseWriter, req *http.Request) {
-			id := chi.URLParam(req, "id")
-			data, _ := json.Marshal(map[string]string{"job_id": id})
-			reply, err := broker.Request(req.Context(), "job.stop", data)
-			if err != nil {
-				writeError(w, err, http.StatusInternalServerError)
-				return
-			}
-			w.Header().Set("Content-Type", "application/json")
-			w.Write(reply)
-		})
-
-		r.Post("/jobs/{id}/pause", func(w http.ResponseWriter, req *http.Request) {
-			id := chi.URLParam(req, "id")
-			data, _ := json.Marshal(map[string]string{"job_id": id})
-			reply, err := broker.Request(req.Context(), "job.pause", data)
-			if err != nil {
-				writeError(w, err, http.StatusInternalServerError)
-				return
-			}
-			w.Header().Set("Content-Type", "application/json")
-			w.Write(reply)
-		})
-
-		r.Post("/jobs/{id}/resume", func(w http.ResponseWriter, req *http.Request) {
-			id := chi.URLParam(req, "id")
-			data, _ := json.Marshal(map[string]string{"job_id": id})
-			reply, err := broker.Request(req.Context(), "job.resume", data)
-			if err != nil {
-				writeError(w, err, http.StatusInternalServerError)
-				return
-			}
-			w.Header().Set("Content-Type", "application/json")
-			w.Write(reply)
-		})
-
-		r.Post("/jobs/{id}/retry", func(w http.ResponseWriter, req *http.Request) {
-			id := chi.URLParam(req, "id")
-			data, _ := json.Marshal(map[string]string{"job_id": id})
-			reply, err := broker.Request(req.Context(), "job.retry", data)
-			if err != nil {
-				writeError(w, err, http.StatusInternalServerError)
-				return
-			}
-			w.Header().Set("Content-Type", "application/json")
-			w.Write(reply)
-		})
-
-		// Pages.
-		r.Get("/jobs/{id}/pages", func(w http.ResponseWriter, req *http.Request) {
-			id := chi.URLParam(req, "id")
-			pages, err := pageRepo.FindByJobID(req.Context(), id, 100, 0)
-			if err != nil {
-				writeError(w, err, http.StatusInternalServerError)
-				return
-			}
-			writeJSON(w, pages)
-		})
-
-		r.Get("/jobs/{id}/pages/{pageID}/content", func(w http.ResponseWriter, req *http.Request) {
-			jobID := chi.URLParam(req, "id")
-			pageID := chi.URLParam(req, "pageID")
-
-			var page store.PageModel
-			err := db.WithContext(req.Context()).
-				Where("id = ? AND job_id = ?", pageID, jobID).
-				First(&page).Error
-			if err != nil {
-				if errors.Is(err, gorm.ErrRecordNotFound) {
+			r.Get("/jobs/{id}", func(w http.ResponseWriter, req *http.Request) {
+				id := chi.URLParam(req, "id")
+				job, err := jobRepo.FindByID(req.Context(), id)
+				if err != nil {
+					writeError(w, err, http.StatusInternalServerError)
+					return
+				}
+				if job == nil {
 					writeError(w, nil, http.StatusNotFound)
 					return
 				}
-				writeError(w, err, http.StatusInternalServerError)
-				return
-			}
-			if strings.TrimSpace(page.ContentPath) == "" {
-				writeError(w, fmt.Errorf("page content not stored"), http.StatusNotFound)
-				return
-			}
+				writeJSON(w, job)
+			})
 
-			path := filepath.Clean(page.ContentPath)
-			if !filepath.IsAbs(path) {
-				path = filepath.Join(".", path)
-			}
-			if _, err := os.Stat(path); err != nil {
-				if errors.Is(err, os.ErrNotExist) {
-					writeError(w, fmt.Errorf("stored file missing"), http.StatusNotFound)
+			// Job actions via NATS request/reply.
+			r.Post("/jobs", func(w http.ResponseWriter, req *http.Request) {
+				var body json.RawMessage
+				if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
+					writeError(w, err, http.StatusBadRequest)
 					return
 				}
-				writeError(w, err, http.StatusInternalServerError)
-				return
-			}
+				reply, err := broker.Request(req.Context(), "job.create", body)
+				if err != nil {
+					writeError(w, err, http.StatusInternalServerError)
+					return
+				}
+				w.Header().Set("Content-Type", "application/json")
+				w.Write(reply)
+			})
 
-			if page.ContentType != "" {
-				w.Header().Set("Content-Type", page.ContentType)
-			}
-			w.Header().Set("Content-Disposition", "inline")
-			http.ServeFile(w, req, path)
-		})
+			r.Post("/jobs/{id}/stop", func(w http.ResponseWriter, req *http.Request) {
+				id := chi.URLParam(req, "id")
+				data, _ := json.Marshal(map[string]string{"job_id": id})
+				reply, err := broker.Request(req.Context(), "job.stop", data)
+				if err != nil {
+					writeError(w, err, http.StatusInternalServerError)
+					return
+				}
+				w.Header().Set("Content-Type", "application/json")
+				w.Write(reply)
+			})
 
-		// URLs.
-		r.Get("/jobs/{id}/urls", func(w http.ResponseWriter, req *http.Request) {
-			id := chi.URLParam(req, "id")
-			counts, err := urlRepo.CountByStatus(req.Context(), id)
-			if err != nil {
-				writeError(w, err, http.StatusInternalServerError)
-				return
-			}
-			writeJSON(w, counts)
-		})
+			r.Post("/jobs/{id}/pause", func(w http.ResponseWriter, req *http.Request) {
+				id := chi.URLParam(req, "id")
+				data, _ := json.Marshal(map[string]string{"job_id": id})
+				reply, err := broker.Request(req.Context(), "job.pause", data)
+				if err != nil {
+					writeError(w, err, http.StatusInternalServerError)
+					return
+				}
+				w.Header().Set("Content-Type", "application/json")
+				w.Write(reply)
+			})
 
-		r.Get("/jobs/{id}/site", func(w http.ResponseWriter, req *http.Request) {
-			type siteRow struct {
-				URLID       string `json:"url_id"`
-				RawURL      string `json:"raw_url"`
-				Normalized  string `json:"normalized"`
-				Depth       int    `json:"depth"`
-				Status      string `json:"status"`
-				RetryCount  int    `json:"retry_count"`
-				LastError   string `json:"last_error,omitempty"`
-				FoundOn     string `json:"found_on,omitempty"`
-				UpdatedAt   string `json:"updated_at"`
-				PageID      string `json:"page_id,omitempty"`
-				HTTPStatus  int    `json:"http_status,omitempty"`
-				ContentType string `json:"content_type,omitempty"`
-				ContentPath string `json:"content_path,omitempty"`
-				ContentSize int64  `json:"content_size,omitempty"`
-				Title       string `json:"title,omitempty"`
-				FetchedAt   string `json:"fetched_at,omitempty"`
-				FileURL     string `json:"file_url,omitempty"`
-			}
+			r.Post("/jobs/{id}/resume", func(w http.ResponseWriter, req *http.Request) {
+				id := chi.URLParam(req, "id")
+				data, _ := json.Marshal(map[string]string{"job_id": id})
+				reply, err := broker.Request(req.Context(), "job.resume", data)
+				if err != nil {
+					writeError(w, err, http.StatusInternalServerError)
+					return
+				}
+				w.Header().Set("Content-Type", "application/json")
+				w.Write(reply)
+			})
 
-			type siteDBRow struct {
-				URLID       string `gorm:"column:url_id"`
-				RawURL      string `gorm:"column:raw_url"`
-				Normalized  string `gorm:"column:normalized"`
-				Depth       int    `gorm:"column:depth"`
-				Status      string `gorm:"column:status"`
-				RetryCount  int    `gorm:"column:retry_count"`
-				LastError   string `gorm:"column:last_error"`
-				FoundOn     string `gorm:"column:found_on"`
-				UpdatedAt   string `gorm:"column:updated_at"`
-				PageID      string `gorm:"column:page_id"`
-				HTTPStatus  int    `gorm:"column:http_status"`
-				ContentType string `gorm:"column:content_type"`
-				ContentPath string `gorm:"column:content_path"`
-				ContentSize int64  `gorm:"column:content_size"`
-				Title       string `gorm:"column:title"`
-				FetchedAt   string `gorm:"column:fetched_at"`
-			}
+			r.Post("/jobs/{id}/retry", func(w http.ResponseWriter, req *http.Request) {
+				id := chi.URLParam(req, "id")
+				data, _ := json.Marshal(map[string]string{"job_id": id})
+				reply, err := broker.Request(req.Context(), "job.retry", data)
+				if err != nil {
+					writeError(w, err, http.StatusInternalServerError)
+					return
+				}
+				w.Header().Set("Content-Type", "application/json")
+				w.Write(reply)
+			})
 
-			jobID := chi.URLParam(req, "id")
-			limit := parsePositiveInt(req.URL.Query().Get("limit"), 50)
-			offset := parsePositiveInt(req.URL.Query().Get("offset"), 0)
-			status := strings.TrimSpace(req.URL.Query().Get("status"))
-			queryText := strings.TrimSpace(req.URL.Query().Get("q"))
-			content := strings.TrimSpace(req.URL.Query().Get("content"))
-			depth := strings.TrimSpace(req.URL.Query().Get("depth"))
+			// Pages.
+			r.Get("/jobs/{id}/pages", func(w http.ResponseWriter, req *http.Request) {
+				id := chi.URLParam(req, "id")
+				pages, err := pageRepo.FindByJobID(req.Context(), id, 100, 0)
+				if err != nil {
+					writeError(w, err, http.StatusInternalServerError)
+					return
+				}
+				writeJSON(w, pages)
+			})
 
-			baseQuery := db.WithContext(req.Context()).
-				Table("urls").
-				Joins("LEFT JOIN pages ON pages.url_id = urls.id").
-				Where("urls.job_id = ?", jobID)
+			r.Get("/jobs/{id}/pages/{pageID}/content", func(w http.ResponseWriter, req *http.Request) {
+				jobID := chi.URLParam(req, "id")
+				pageID := chi.URLParam(req, "pageID")
 
-			if status != "" && status != "all" {
-				baseQuery = baseQuery.Where("urls.status = ?", status)
-			}
-			if content == "stored" {
-				baseQuery = baseQuery.Where("pages.content_path <> ''")
-			}
-			if queryText != "" {
-				like := "%" + strings.ToLower(queryText) + "%"
-				baseQuery = baseQuery.Where(
-					"lower(urls.normalized) LIKE ? OR lower(urls.raw_url) LIKE ? OR lower(pages.title) LIKE ?",
-					like,
-					like,
-					like,
-				)
-			}
-			if depth != "" && depth != "all" {
-				baseQuery = baseQuery.Where("urls.depth = ?", parsePositiveInt(depth, 0))
-			}
+				var page store.PageModel
+				err := db.WithContext(req.Context()).
+					Where("id = ? AND job_id = ?", pageID, jobID).
+					First(&page).Error
+				if err != nil {
+					if errors.Is(err, gorm.ErrRecordNotFound) {
+						writeError(w, nil, http.StatusNotFound)
+						return
+					}
+					writeError(w, err, http.StatusInternalServerError)
+					return
+				}
+				if strings.TrimSpace(page.ContentPath) == "" {
+					writeError(w, fmt.Errorf("page content not stored"), http.StatusNotFound)
+					return
+				}
 
-			var total int64
-			if err := baseQuery.Session(&gorm.Session{}).Count(&total).Error; err != nil {
-				writeError(w, err, http.StatusInternalServerError)
-				return
-			}
+				path := filepath.Clean(page.ContentPath)
+				if !filepath.IsAbs(path) {
+					path = filepath.Join(".", path)
+				}
+				if _, err := os.Stat(path); err != nil {
+					if errors.Is(err, os.ErrNotExist) {
+						writeError(w, fmt.Errorf("stored file missing"), http.StatusNotFound)
+						return
+					}
+					writeError(w, err, http.StatusInternalServerError)
+					return
+				}
 
-			var rows []siteDBRow
-			err := baseQuery.
-				Select(`
+				if page.ContentType != "" {
+					w.Header().Set("Content-Type", page.ContentType)
+				}
+				w.Header().Set("Content-Disposition", "inline")
+				http.ServeFile(w, req, path)
+			})
+
+			// URLs.
+			r.Get("/jobs/{id}/urls", func(w http.ResponseWriter, req *http.Request) {
+				id := chi.URLParam(req, "id")
+				counts, err := urlRepo.CountByStatus(req.Context(), id)
+				if err != nil {
+					writeError(w, err, http.StatusInternalServerError)
+					return
+				}
+				writeJSON(w, counts)
+			})
+
+			r.Get("/jobs/{id}/site", func(w http.ResponseWriter, req *http.Request) {
+				type siteRow struct {
+					URLID       string `json:"url_id"`
+					RawURL      string `json:"raw_url"`
+					Normalized  string `json:"normalized"`
+					Depth       int    `json:"depth"`
+					Status      string `json:"status"`
+					RetryCount  int    `json:"retry_count"`
+					LastError   string `json:"last_error,omitempty"`
+					FoundOn     string `json:"found_on,omitempty"`
+					UpdatedAt   string `json:"updated_at"`
+					PageID      string `json:"page_id,omitempty"`
+					HTTPStatus  int    `json:"http_status,omitempty"`
+					ContentType string `json:"content_type,omitempty"`
+					ContentPath string `json:"content_path,omitempty"`
+					ContentSize int64  `json:"content_size,omitempty"`
+					Title       string `json:"title,omitempty"`
+					FetchedAt   string `json:"fetched_at,omitempty"`
+					FileURL     string `json:"file_url,omitempty"`
+				}
+
+				type siteDBRow struct {
+					URLID       string `gorm:"column:url_id"`
+					RawURL      string `gorm:"column:raw_url"`
+					Normalized  string `gorm:"column:normalized"`
+					Depth       int    `gorm:"column:depth"`
+					Status      string `gorm:"column:status"`
+					RetryCount  int    `gorm:"column:retry_count"`
+					LastError   string `gorm:"column:last_error"`
+					FoundOn     string `gorm:"column:found_on"`
+					UpdatedAt   string `gorm:"column:updated_at"`
+					PageID      string `gorm:"column:page_id"`
+					HTTPStatus  int    `gorm:"column:http_status"`
+					ContentType string `gorm:"column:content_type"`
+					ContentPath string `gorm:"column:content_path"`
+					ContentSize int64  `gorm:"column:content_size"`
+					Title       string `gorm:"column:title"`
+					FetchedAt   string `gorm:"column:fetched_at"`
+				}
+
+				jobID := chi.URLParam(req, "id")
+				limit := parsePositiveInt(req.URL.Query().Get("limit"), 50)
+				offset := parsePositiveInt(req.URL.Query().Get("offset"), 0)
+				status := strings.TrimSpace(req.URL.Query().Get("status"))
+				queryText := strings.TrimSpace(req.URL.Query().Get("q"))
+				content := strings.TrimSpace(req.URL.Query().Get("content"))
+				depth := strings.TrimSpace(req.URL.Query().Get("depth"))
+
+				baseQuery := db.WithContext(req.Context()).
+					Table("urls").
+					Joins("LEFT JOIN pages ON pages.url_id = urls.id").
+					Where("urls.job_id = ?", jobID)
+
+				if status != "" && status != "all" {
+					baseQuery = baseQuery.Where("urls.status = ?", status)
+				}
+				if content == "stored" {
+					baseQuery = baseQuery.Where("pages.content_path <> ''")
+				}
+				if queryText != "" {
+					like := "%" + strings.ToLower(queryText) + "%"
+					baseQuery = baseQuery.Where(
+						"lower(urls.normalized) LIKE ? OR lower(urls.raw_url) LIKE ? OR lower(pages.title) LIKE ?",
+						like,
+						like,
+						like,
+					)
+				}
+				if depth != "" && depth != "all" {
+					baseQuery = baseQuery.Where("urls.depth = ?", parsePositiveInt(depth, 0))
+				}
+
+				var total int64
+				if err := baseQuery.Session(&gorm.Session{}).Count(&total).Error; err != nil {
+					writeError(w, err, http.StatusInternalServerError)
+					return
+				}
+
+				var rows []siteDBRow
+				err := baseQuery.
+					Select(`
 					urls.id AS url_id,
 					urls.raw_url,
 					urls.normalized,
@@ -351,115 +361,109 @@ func NewRouter(db *gorm.DB, broker ports.MessageBroker, logger *slog.Logger) *Ro
 					pages.title,
 					pages.fetched_at
 				`).
-				Order("urls.depth ASC, urls.normalized ASC").
-				Limit(limit).
-				Offset(offset).
-				Scan(&rows).Error
-			if err != nil {
-				writeError(w, err, http.StatusInternalServerError)
-				return
-			}
-
-			items := make([]siteRow, 0, len(rows))
-			for _, row := range rows {
-				item := siteRow{
-					URLID:       row.URLID,
-					RawURL:      row.RawURL,
-					Normalized:  row.Normalized,
-					Depth:       row.Depth,
-					Status:      row.Status,
-					RetryCount:  row.RetryCount,
-					LastError:   row.LastError,
-					FoundOn:     row.FoundOn,
-					UpdatedAt:   row.UpdatedAt,
-					PageID:      row.PageID,
-					HTTPStatus:  row.HTTPStatus,
-					ContentType: row.ContentType,
-					ContentPath: row.ContentPath,
-					ContentSize: row.ContentSize,
-					Title:       row.Title,
-					FetchedAt:   row.FetchedAt,
+					Order("urls.depth ASC, urls.normalized ASC").
+					Limit(limit).
+					Offset(offset).
+					Scan(&rows).Error
+				if err != nil {
+					writeError(w, err, http.StatusInternalServerError)
+					return
 				}
-				if row.PageID != "" && row.ContentPath != "" {
-					item.FileURL = fmt.Sprintf("/api/jobs/%s/pages/%s/content", jobID, row.PageID)
+
+				items := make([]siteRow, 0, len(rows))
+				for _, row := range rows {
+					item := siteRow{
+						URLID:       row.URLID,
+						RawURL:      row.RawURL,
+						Normalized:  row.Normalized,
+						Depth:       row.Depth,
+						Status:      row.Status,
+						RetryCount:  row.RetryCount,
+						LastError:   row.LastError,
+						FoundOn:     row.FoundOn,
+						UpdatedAt:   row.UpdatedAt,
+						PageID:      row.PageID,
+						HTTPStatus:  row.HTTPStatus,
+						ContentType: row.ContentType,
+						ContentPath: row.ContentPath,
+						ContentSize: row.ContentSize,
+						Title:       row.Title,
+						FetchedAt:   row.FetchedAt,
+					}
+					if row.PageID != "" && row.ContentPath != "" {
+						item.FileURL = fmt.Sprintf("/api/jobs/%s/pages/%s/content", jobID, row.PageID)
+					}
+					items = append(items, item)
 				}
-				items = append(items, item)
-			}
 
-			writeJSON(w, map[string]any{
-				"items":   items,
-				"limit":   limit,
-				"offset":  offset,
-				"total":   total,
-				"status":  status,
-				"query":   queryText,
-				"content": content,
-				"depth":   depth,
+				writeJSON(w, map[string]any{
+					"items":   items,
+					"limit":   limit,
+					"offset":  offset,
+					"total":   total,
+					"status":  status,
+					"query":   queryText,
+					"content": content,
+					"depth":   depth,
+				})
 			})
-		})
 
-		r.Get("/jobs/{id}/exceptions", func(w http.ResponseWriter, req *http.Request) {
-			id := chi.URLParam(req, "id")
-			limit := parsePositiveInt(req.URL.Query().Get("limit"), 50)
-			offset := parsePositiveInt(req.URL.Query().Get("offset"), 0)
+			r.Get("/jobs/{id}/exceptions", func(w http.ResponseWriter, req *http.Request) {
+				id := chi.URLParam(req, "id")
+				limit := parsePositiveInt(req.URL.Query().Get("limit"), 50)
+				offset := parsePositiveInt(req.URL.Query().Get("offset"), 0)
 
-			items, err := urlRepo.FindByJobIDAndStatuses(
-				req.Context(),
-				id,
-				[]entities.URLStatus{entities.URLStatusError, entities.URLStatusBlocked},
-				limit,
-				offset,
-			)
-			if err != nil {
-				writeError(w, err, http.StatusInternalServerError)
-				return
-			}
+				items, err := urlRepo.FindByJobIDAndStatuses(
+					req.Context(),
+					id,
+					[]entities.URLStatus{entities.URLStatusError, entities.URLStatusBlocked},
+					limit,
+					offset,
+				)
+				if err != nil {
+					writeError(w, err, http.StatusInternalServerError)
+					return
+				}
 
-			writeJSON(w, map[string]any{
-				"items":  items,
-				"limit":  limit,
-				"offset": offset,
+				writeJSON(w, map[string]any{
+					"items":  items,
+					"limit":  limit,
+					"offset": offset,
+				})
 			})
-		})
 
-		r.Get("/gui/dashboard", datastarHandlers.handleDashboard)
-		r.Post("/gui/jobs", datastarHandlers.handleCreateJob)
-		r.Post("/gui/jobs/{id}/{action}", datastarHandlers.handleJobAction)
-		r.Get("/gui/subscribe", datastarHandlers.handleSubscribe)
-		r.Get("/gui/events", datastarHandlers.handleSubscribe)
-		r.Get("/gui/clock", datastarHandlers.handleClock)
+			// Export.
+			r.Get("/jobs/{id}/export", func(w http.ResponseWriter, req *http.Request) {
+				id := chi.URLParam(req, "id")
+				format := req.URL.Query().Get("format")
+				if format == "" {
+					format = "json"
+				}
 
-		// Export.
-		r.Get("/jobs/{id}/export", func(w http.ResponseWriter, req *http.Request) {
-			id := chi.URLParam(req, "id")
-			format := req.URL.Query().Get("format")
-			if format == "" {
-				format = "json"
-			}
+				switch format {
+				case "csv":
+					w.Header().Set("Content-Type", "text/csv")
+					w.Header().Set("Content-Disposition", "attachment; filename=export.csv")
+				case "sitemap":
+					w.Header().Set("Content-Type", "application/xml")
+					w.Header().Set("Content-Disposition", "attachment; filename=sitemap.xml")
+				default:
+					w.Header().Set("Content-Type", "application/json")
+				}
 
-			switch format {
-			case "csv":
-				w.Header().Set("Content-Type", "text/csv")
-				w.Header().Set("Content-Disposition", "attachment; filename=export.csv")
-			case "sitemap":
-				w.Header().Set("Content-Type", "application/xml")
-				w.Header().Set("Content-Disposition", "attachment; filename=sitemap.xml")
-			default:
-				w.Header().Set("Content-Type", "application/json")
-			}
+				err := exportSvc.Export(req.Context(), ports.ExportFormat(format), ports.ExportFilter{JobID: id}, w)
+				if err != nil {
+					writeError(w, err, http.StatusInternalServerError)
+				}
+			})
 
-			err := exportSvc.Export(req.Context(), ports.ExportFormat(format), ports.ExportFilter{JobID: id}, w)
-			if err != nil {
-				writeError(w, err, http.StatusInternalServerError)
-			}
-		})
+			// SSE.
+			r.Get("/events", sseBroker.ServeHTTP)
 
-		// SSE.
-		r.Get("/events", sseBroker.ServeHTTP)
-
-		// Health.
-		r.Get("/health", func(w http.ResponseWriter, _ *http.Request) {
-			writeJSON(w, map[string]string{"status": "ok"})
+			// Health.
+			r.Get("/health", func(w http.ResponseWriter, _ *http.Request) {
+				writeJSON(w, map[string]string{"status": "ok"})
+			})
 		})
 	})
 
