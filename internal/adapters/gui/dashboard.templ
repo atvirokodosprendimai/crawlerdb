@@ -28,6 +28,19 @@ templ DashboardPage() {
                         <div class="empty">Loading dashboard…</div>
                     </div>
                 </div>
+                <section class="panel section">
+                    <div class="section-head">
+                        <div>
+                            <h2 class="section-title">Live Stream</h2>
+                            <p class="section-subtitle">Raw event feed from the backend.</p>
+                        </div>
+                    </div>
+                    <div id="event-stream" class="stream" data-ignore-morph>
+                        <div id="event-stream-empty" class="stream-item">
+                            <p class="quiet-note">Waiting for new events.</p>
+                        </div>
+                    </div>
+                </section>
                 <div id="dashboard-refresh-trigger" hidden></div>
                 <div data-init={ subscribeDashboardExpr() }></div>
             </div>
@@ -248,19 +261,6 @@ templ DashboardRoot(view dashboardView) {
                         }
                     </section>
 
-                    <section class="panel section">
-                        <div class="section-head">
-                            <div>
-                                <h2 class="section-title">Live Stream</h2>
-                                <p class="section-subtitle">Raw event feed from the backend.</p>
-                            </div>
-                        </div>
-                        <div id="event-stream" class="stream" data-ignore-morph>
-                            <div id="event-stream-empty" class="stream-item">
-                                <p class="quiet-note">Waiting for new events.</p>
-                            </div>
-                        </div>
-                    </section>
                 </aside>
             </div>
 
