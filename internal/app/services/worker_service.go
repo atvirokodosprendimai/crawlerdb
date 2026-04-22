@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"mime"
@@ -442,6 +443,14 @@ func (w *WorkerService) Run(ctx context.Context, jobIDs []string) error {
 				defer cancel()
 
 				result := w.ProcessTask(taskCtx, task)
+				if errors.Is(taskCtx.Err(), context.Canceled) {
+					w.logger.Info("skip publishing canceled task result",
+						"job_id", task.JobID,
+						"url_id", task.URLID,
+						"url", task.URL,
+					)
+					return
+				}
 
 				// Report result back to core.
 				resultData, err := compactResultForTransport(result)

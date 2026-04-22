@@ -325,6 +325,40 @@ func TestCrawlService_DispatchURLsRateLimitsPerDomain(t *testing.T) {
 	assert.Equal(t, 1, n)
 }
 
+func TestCrawlService_DispatchURLs_DoesNotBurstSameDomainWhenRateLimited(t *testing.T) {
+	db := setupTestDB(t)
+	b := setupTestNATS(t)
+	jobRepo := store.NewJobRepository(db)
+	urlRepo := store.NewURLRepository(db)
+	pageRepo := store.NewPageRepository(db, store.WithContentDir(filepath.Join(t.TempDir(), "data")))
+	crawlSvc := services.NewCrawlService(jobRepo, urlRepo, pageRepo, nil, b)
+	jobSvc := services.NewJobService(jobRepo, urlRepo, b)
+	ctx := context.Background()
+
+	job, err := jobSvc.CreateJob(ctx, "https://example.com", valueobj.CrawlConfig{
+		Scope:      valueobj.ScopeSameDomain,
+		MaxDepth:   3,
+		Extraction: valueobj.ExtractionStandard,
+		UserAgent:  "TestBot/1.0",
+		RateLimit:  valueobj.Duration{Duration: time.Second},
+	})
+	require.NoError(t, err)
+	require.NoError(t, jobSvc.StartJob(ctx, job.ID))
+
+	require.NoError(t, urlRepo.Enqueue(ctx, entities.NewCrawlURL(job.ID, "https://example.com", "https://example.com/", "hash1", 0, "")))
+	require.NoError(t, urlRepo.Enqueue(ctx, entities.NewCrawlURL(job.ID, "https://example.com/about", "https://example.com/about", "hash2", 1, "")))
+	require.NoError(t, urlRepo.Enqueue(ctx, entities.NewCrawlURL(job.ID, "https://example.com/contact", "https://example.com/contact", "hash3", 1, "")))
+
+	n, err := crawlSvc.DispatchURLs(ctx, job.ID, job.Config, 3)
+	require.NoError(t, err)
+	assert.Equal(t, 1, n)
+
+	counts, err := urlRepo.CountByStatus(ctx, job.ID)
+	require.NoError(t, err)
+	assert.Equal(t, 1, counts[entities.URLStatusCrawling])
+	assert.Equal(t, 2, counts[entities.URLStatusPending])
+}
+
 func TestCrawlService_DispatchURLs_AllowsBurstForSameDomainUpToAvailableCapacity(t *testing.T) {
 	db := setupTestDB(t)
 	b := setupTestNATS(t)

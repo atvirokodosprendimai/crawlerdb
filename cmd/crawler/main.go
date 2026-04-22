@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"log/slog"
 	"os"
@@ -208,6 +209,14 @@ func main() {
 			defer cancel()
 
 			result := workerSvc.ProcessTask(taskCtx, task)
+			if errors.Is(taskCtx.Err(), context.Canceled) {
+				logger.Info("skip publishing canceled task result",
+					"job_id", task.JobID,
+					"url_id", task.URLID,
+					"url", task.URL,
+				)
+				return
+			}
 			logger.Debug("task processed",
 				"job_id", task.JobID,
 				"url_id", task.URLID,

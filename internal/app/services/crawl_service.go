@@ -139,6 +139,7 @@ func (s *CrawlService) selectDispatchIDs(ctx context.Context, jobID string, cfg 
 	interval := cfg.RateLimit.Duration
 	now := time.Now()
 	selected := make([]string, 0, limit)
+	reservedDomains := make(map[string]struct{}, limit)
 
 	for _, u := range pending {
 		if len(selected) >= limit {
@@ -148,10 +149,18 @@ func (s *CrawlService) selectDispatchIDs(ctx context.Context, jobID string, cfg 
 		if domain == "" {
 			continue
 		}
+		if interval > 0 {
+			if _, exists := reservedDomains[domain]; exists {
+				continue
+			}
+		}
 		if interval > 0 && !s.canDispatch(domain, now, interval) {
 			continue
 		}
 		selected = append(selected, u.ID)
+		if interval > 0 {
+			reservedDomains[domain] = struct{}{}
+		}
 	}
 
 	return selected, nil
